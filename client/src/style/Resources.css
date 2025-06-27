@@ -1,0 +1,67 @@
+/* Container for the entire view */
+/* Improved vertical layout with subtle shadows and padding for a cleaner, modern look */
+
+.resources-container {
+  padding: 2rem;
+  max-width: 600px;
+  margin: auto;
+}
+
+.filters {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+select {
+  padding: 0.6rem 1rem;
+  font-size: 1rem;
+  border-radius: 6px;
+  border: 1px solid #ccc;
+  width: 100%;
+  max-width: 300px;
+}
+
+.resource-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1.2rem;
+}
+
+.resource-card {
+  background: #ffffff;
+  padding: 1rem 1.5rem;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.resource-info h3 {
+  margin: 0;
+  font-size: 1.1rem;
+  color: #333;
+}
+
+.resource-info p {
+  margin: 0.3rem 0 0;
+  font-size: 0.9rem;
+  color: #666;
+}
+
+.download-btn {
+  background-color: #4f46e5;
+  color: white;
+  text-decoration: none;
+  padding: 0.6rem 1.2rem;
+  border-radius: 8px;
+  font-weight: 500;
+  transition: background 0.3s ease;
+}
+
+.download-btn:hover {
+  background-color: #3730a3;
+}
