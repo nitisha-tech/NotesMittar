@@ -3,15 +3,15 @@
 
 .resources-container {
   min-height: 100vh;
-  background: linear-gradient(135deg, #6866ea 0%, #ea6666 100%);
+  background: white;
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
 }
 
 /* Header Styles */
 .resources-header {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.1);
   backdrop-filter: blur(20px);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.2);
   padding: 1.5rem 2rem;
   position: sticky;
   top: 0;
@@ -33,18 +33,18 @@
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  background: rgba(255, 255, 255, 0.15);
+  background: rgba(0, 0, 0, 0.15);
   border: none;
   border-radius: 12px;
   padding: 0.75rem 1rem;
-  color: white;
+  color: black;
   cursor: pointer;
   transition: all 0.3s ease;
   font-weight: 500;
 }
 
 .back-button:hover {
-  background: rgba(255, 255, 255, 0.25);
+  background: rgba(0, 0, 0, 0.25);
   transform: translateY(-2px);
 }
 
@@ -55,17 +55,17 @@
 }
 
 .header-icon {
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(0, 0, 0, 0.2);
   border-radius: 16px;
   padding: 1rem;
-  color: white;
+  color: black;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
 .header-title {
-  color: white;
+  color: black;
   font-size: 1.75rem;
   font-weight: 700;
   margin: 0;
@@ -92,7 +92,7 @@
 }
 
 .breadcrumb {
-  color: rgba(255, 255, 255, 0.8);
+  color: rgba(0, 0, 0, 0.8);
   margin: 0.25rem 0 0 0;
   font-size: 0.9rem;
 }
@@ -109,15 +109,15 @@
 }
 
 .stage-title {
-  color: white;
+  color: black;
   font-size: 2.5rem;
   font-weight: 700;
   margin-bottom: 0.5rem;
-  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+  text-shadow: 2px 2px 4px rgba(255, 255, 255, 0.3);
 }
 
 .stage-description {
-  color: rgba(255, 255, 255, 0.8);
+  color: rgba(0, 0, 0, 0.8);
   font-size: 1.1rem;
   margin-bottom: 3rem;
 }
@@ -130,9 +130,9 @@
 }
 
 .course-card {
-  background: rgba(255, 255, 255, 0.15);
+  background: rgba(0, 0, 0, 0.15);
   backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(0, 0, 0, 0.2);
   border-radius: 24px;
   padding: 3rem 2rem;
   cursor: pointer;
@@ -151,7 +151,7 @@
   left: -100%;
   width: 100%;
   height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+  background: linear-gradient(90deg, transparent, rgba(0, 0, 0, 0.1), transparent);
   transition: left 0.5s;
 }
 
@@ -161,7 +161,7 @@
 
 .course-card:hover {
   transform: translateY(-10px);
-  background: rgba(255, 255, 255, 0.25);
+  background: rgba(0, 0, 0, 0.25);
   box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
 }
 
@@ -192,14 +192,14 @@
 }
 
 .course-title {
-  color: white;
+  color: black;
   font-size: 2rem;
   font-weight: 700;
   margin-bottom: 0.5rem;
 }
 
 .course-subtitle {
-  color: rgba(255, 255, 255, 0.8);
+  color: rgba(0, 0, 0, 0.8);
   font-size: 1rem;
   margin-bottom: 1.5rem;
 }
@@ -209,7 +209,7 @@
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
-  color: white;
+  color: black;
   font-weight: 600;
 }
 
@@ -248,9 +248,9 @@
 
 /* Card Styles */
 .year-card, .semester-card, .subject-card {
-  background: rgba(255, 255, 255, 0.15);
+  background: rgba(0, 0, 0, 0.15);
   backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(0, 0, 0, 0.2);
   border-radius: 20px;
   padding: 2rem;
   cursor: pointer;
@@ -267,7 +267,7 @@
   left: -100%;
   width: 100%;
   height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+  background: linear-gradient(90deg, transparent, rgba(0, 0, 0, 0.1), transparent);
   transition: left 0.5s;
 }
 
@@ -277,7 +277,7 @@
 
 .year-card:hover, .semester-card:hover, .subject-card:hover {
   transform: translateY(-8px);
-  background: rgba(255, 255, 255, 0.25);
+  background: rgba(0, 0, 0, 0.25);
   box-shadow: 0 15px 30px rgba(0, 0, 0, 0.2);
 }
 
@@ -332,14 +332,14 @@
 }
 
 .year-title, .semester-title, .subject-title {
-  color: white;
+  color: black;
   font-size: 1.5rem;
   font-weight: 700;
   margin-bottom: 0.5rem;
 }
 
 .year-subtitle, .semester-subtitle {
-  color: rgba(255, 255, 255, 0.8);
+  color: rgba(0, 0, 0, 0.8);
   font-size: 0.9rem;
   margin-bottom: 1rem;
 }
@@ -349,14 +349,14 @@
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
-  color: white;
+  color: black;
   font-weight: 600;
   font-size: 0.9rem;
 }
 
 /* Resources View */
 .resources-view-container {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.1);
   backdrop-filter: blur(20px);
   border-radius: 24px;
   padding: 2rem;
@@ -369,14 +369,14 @@
 }
 
 .resources-view-title {
-  color: white;
+  color: black;
   font-size: 2.5rem;
   font-weight: 700;
   margin-bottom: 0.5rem;
 }
 
 .resources-view-subtitle {
-  color: rgba(255, 255, 255, 0.8);
+  color: rgba(0, 0, 0, 0.8);
   font-size: 1.1rem;
 }
 
@@ -393,11 +393,11 @@
 }
 
 .tab {
-  background: rgba(255, 255, 255, 0.15);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(0, 0, 0, 0.15);
+  border: 1px solid rgba(0, 0, 0, 0.2);
   border-radius: 16px;
   padding: 1rem 1.5rem;
-  color: white;
+  color: black;
   cursor: pointer;
   transition: all 0.3s ease;
   font-weight: 600;
@@ -407,12 +407,12 @@
 }
 
 .tab:hover {
-  background: rgba(255, 255, 255, 0.25);
+  background: rgba(0, 0, 0, 0.25);
   transform: translateY(-2px);
 }
 
 .active-tab {
-  background: rgba(255, 255, 255, 0.3);
+  background: rgba(0, 0, 0, 0.3);
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
 }
 
@@ -452,25 +452,25 @@
 
 .search-input {
   width: 100%;
-  background: rgba(255, 255, 255, 0.15);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(0, 0, 0, 0.15);
+  border: 1px solid rgba(0, 0, 0, 0.2);
   border-radius: 16px;
   padding: 1rem 1rem 1rem 3rem;
-  color: white;
+  color: black;
   font-size: 1rem;
   backdrop-filter: blur(20px);
   transition: all 0.3s ease;
 }
 
 .search-input::placeholder {
-  color: rgba(255, 255, 255, 0.6);
+  color: rgba(0, 0, 0, 0.6);
 }
 
 .search-input:focus {
   outline: none;
-  background: rgba(255, 255, 255, 0.25);
-  border-color: rgba(255, 255, 255, 0.4);
-  box-shadow: 0 0 20px rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.25);
+  border-color: rgba(0, 0, 0, 0.4);
+  box-shadow: 0 0 20px rgba(0, 0, 0, 0.1);
 }
 
 .search-icon {
@@ -478,7 +478,7 @@
   left: 1rem;
   top: 50%;
   transform: translateY(-50%);
-  color: rgba(255, 255, 255, 0.6);
+  color: rgba(0, 0, 0, 0.6);
 }
 
 /* Resource Cards */
@@ -489,9 +489,9 @@
 }
 
 .resource-card {
-  background: rgba(255, 255, 255, 0.15);
+  background: rgba(0, 0, 0, 0.15);
   backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(0, 0, 0, 0.2);
   border-radius: 16px;
   padding: 1.5rem;
   display: flex;
@@ -501,8 +501,7 @@
 }
 
 .resource-card:hover {
-  background: rgba(255, 255, 255, 0.25);
+  background: rgba(0, 0, 0, 0.25);
   transform: translateY(-3px);
   box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
 }
-
