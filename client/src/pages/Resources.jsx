@@ -19,16 +19,68 @@ function Resources() {
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
 
-  useEffect(() => {
+  // Subject mapping by semester
+  const subjectsBySemester = {
+    "Sem 1": [
+      "Probability and Statistics",
+      "EVS",
+      "IT Workshop",
+      "Programming with Python",
+      "Communication Skills"
+    ],
+    "Sem 2": [
+      "Applied Maths",
+      "Applied Physics",
+      "Introduction to DS",
+      "Data Structures",
+      "OOPS"
+    ],
+    "Sem 3": [
+      "Discrete Structures",
+      "DBMS",
+      "AI",
+      "Software Engineering",
+      "MSE",
+      "Numerical Method"
+    ],
+    "Sem 4": [
+      "Disaster Management",
+      "Computer Networks",
+      "Operation Management",
+      "Design and Analysis of Algorithm",
+      "Operating System",
+      "Machine Learning"
+    ],
+    "Sem 5": [
+      "Subject 1", "Subject 2", "Subject 3", "Subject 4"
+    ],
+    "Sem 6": [
+      "Subject 1", "Subject 2", "Subject 3", "Subject 4"
+    ],
+    "Sem 7": [
+      "Subject 1", "Subject 2", "Subject 3", "Subject 4"
+    ],
+    "Sem 8": [
+      "Subject 1", "Subject 2", "Subject 3", "Subject 4"
+    ]
+  };
+
+  // Fix 1: In your Resources.jsx - Update the useEffect to convert year to string
+useEffect(() => {
     const fetchResources = async () => {
       try {
         const params = new URLSearchParams();
         if (course) params.append('course', course);
-        if (year !== null) params.append('year', year);
-        if (semester !== null) params.append('semester', semester);
+        if (semester !== null) params.append('semester', `Sem ${semester}`);
         if (subject) params.append('subject', subject);
         if (type) params.append('type', type);
 
+        // Only append year if not null
+        if (year !== null && (type === 'PYQs' ? year >= 2020 : true)) {
+          params.append('year', year.toString());
+        }
+
+        console.log('Fetching with params:', params.toString());
         const res = await axios.get(`http://localhost:5000/api/resources?${params.toString()}`);
         console.log("Fetched resources:", res.data);
         setResources(res.data);
@@ -39,7 +91,9 @@ function Resources() {
       }
     };
 
-    if (stage === 5) fetchResources();
+    if (stage === 5) {
+      fetchResources();
+    }
   }, [stage, course, year, semester, subject, type]);
 
   const showYears = () => setStage(2);
@@ -58,14 +112,8 @@ function Resources() {
 
   const showSubjects = (sem) => {
     setSemester(sem);
-    const subjMap = {
-      1: ['Probability & Statistics', 'EVS', 'IT Workshop', 'Programming with Python', 'Communication Skills'],
-      2: ['Applied Maths', 'Applied Physics', 'Intro to DS', 'Data Structures', 'OOPJ'],
-      3: ['Discrete Mathematics','Software Engineering ','Design and Analysis of Algorithm','Introduction to Internet of Things'],
-      4: ['Database Management Systems','Computer Organiztion and Architecture','Operating Systems','Data Communication and Computer Networks','Advanced IOT and Real World Applications'],
-      
-    };
-    setSubjects(subjMap[sem] || ['Subject 1', 'Subject 2']);
+    const semesterKey = `Sem ${sem}`;
+    setSubjects(subjectsBySemester[semesterKey] || []);
     setStage(4);
   };
 
@@ -74,7 +122,11 @@ function Resources() {
     setStage(5);
   };
 
-  const goBack = () => stage > 1 && setStage(stage - 1);
+  const goBack = () => {
+    if (stage > 1) {
+      setStage(stage - 1);
+    }
+  };
 
   const getBreadcrumb = () => {
     const parts = [];
@@ -99,25 +151,28 @@ function Resources() {
   // Enhanced icon mapping for subjects
   const getSubjectIcon = (subject, index) => {
     const iconMap = {
-      'Probability & Statistics': '📊',
+      'Probability and Statistics': '📊',
       'EVS': '🌱',
       'IT Workshop': '⚡',
       'Programming with Python': '🐍',
       'Communication Skills': '💬',
       'Applied Maths': '📐',
       'Applied Physics': '⚛️',
-      'Intro to DS': '🔬',
+      'Introduction to DS': '🔬',
       'Data Structures': '🏗️',
-      'OOPJ': '☕',
-      'Discrete Mathematics': '🧮',
+      'OOPS': '☕',
+      'Discrete Structures': '🧮',
+      'DBMS': '🗄️',
+      'AI': '🤖',
       'Software Engineering': '⚙️',
+      'MSE': '🔧',
+      'Numerical Method': '🔢',
+      'Disaster Management': '🚨',
+      'Computer Networks': '🌐',
+      'Operation Management': '📈',
       'Design and Analysis of Algorithm': '🔍',
-      'Introduction to Internet of Things': '🌐',
-      'Database Management Systems': '🗄️',
-      'Computer Organiztion and Architecture': '💻',
-      'Operating Systems': '🖥️',
-      'Data Communication and Computer Networks': '🌊',
-      'Advanced IOT and Real World Applications': '🚀'
+      'Operating System': '🖥️',
+      'Machine Learning': '🧠'
     };
     
     return iconMap[subject] || ['📚', '🔬', '💻', '🧠', '⚡', '🎯', '🔧', '📈', '🌟', '🎨'][index % 10];
@@ -324,6 +379,17 @@ function Resources() {
               </div>
             )}
 
+            {/* Debug Info - Remove in production */}
+            <div style={{background: '#f0f0f0', padding: '10px', margin: '10px 0', fontSize: '12px'}}>
+              <strong>Debug Info:</strong><br/>
+              Course: {course}<br/>
+              Year: {year}<br/>
+              Semester: Sem {semester}<br/>
+              Subject: {subject}<br/>
+              Type: {type}<br/>
+              Resources found: {filteredResources.length}
+            </div>
+
             {/* Resources List */}
             <div className="resources-list">
               {filteredResources.length > 0 ? (
@@ -365,21 +431,3 @@ function Resources() {
 }
 
 export default Resources;
- 
-  
-
-  
-    
-    
-  
-            
-    
-       
-       
-           
-           
-  ,
-
-
-  
-   
