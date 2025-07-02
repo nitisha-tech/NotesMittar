@@ -1,4 +1,4 @@
-
+//ContactUS portion starting at line 265
 // server.js
 // server.js
 const express = require('express');
@@ -262,6 +262,25 @@ app.post('/api/upload', upload.single('pdf'), async (req, res) => {
     res.status(500).json({ error: 'Upload failed: ' + error.message });
   }
 });
+const ContactMessage = require('./models/ContactMessage');
+
+app.post('/api/contact', async (req, res) => {
+  const { name, email, message } = req.body;
+
+  if (!name || !email || !message) {
+    return res.status(400).json({ error: 'All fields are required' });
+  }
+
+  try {
+    const savedMessage = await ContactMessage.create({ name, email, message });
+    console.log('📩 Contact form submission:', savedMessage);
+    res.status(201).json({ message: 'Message received successfully!' });
+  } catch (error) {
+    console.error('❌ Contact form error:', error);
+    res.status(500).json({ error: 'Failed to submit message' });
+  }
+});
+
 
 app.get('/api/my-resources', async (req, res) => {
   const username = req.headers.username;
