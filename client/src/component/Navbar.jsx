@@ -1,65 +1,108 @@
 
 import { Link, useNavigate } from 'react-router-dom';
-import { useLocation } from 'react-router-dom';
-
 import { useEffect, useRef, useState } from 'react';
 import '../style/Navbar.css';
+import Profile from './Profile'; // ✅ Sidebar profile component
 
 export default function Navbar() {
   const navigate = useNavigate();
-  const isLoggedIn = sessionStorage.getItem('loggedIn') === 'true';
-  const [showMenu, setShowMenu] = useState(false);
-  const menuRef = useRef();
-  
-const handleUploadClick = () => {
-  if (isLoggedIn) {
-    navigate('/upload');
-  } else {
-    navigate('/login', { state: { from: '/upload' } }); // ✅ FIXED
+  const [isLoggedIn, setIsLoggedIn] = useState(sessionStorage.getItem('loggedIn') === 'true');
+  const [user, setUser] = useState(null);
+  const [isLoadingUser, setIsLoadingUser] = useState(false);
+  const [showProfileSidebar, setShowProfileSidebar] = useState(false);
+
+  useEffect(() => {
+    if (isLoggedIn) {
+      fetchUserData();
+    }
+  }, [isLoggedIn]);
+
+  const fetchUserData = async () => {
+    setIsLoadingUser(true);
+    try {
+      const token = sessionStorage.getItem('token');
+      const username = sessionStorage.getItem('username');
+      if (!token && !username) return;
+
+      const res = await fetch('http://localhost:5000/api/user-profile', {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          username
+        }
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setUser(data);
+      } else {
+        fallbackUser();
+      }
+    } catch (err) {
+      console.error(err);
+      fallbackUser();
+    } finally {
+      setIsLoadingUser(false);
+    }
+  };
+
+  const fallbackUser = () => {
+  const username = sessionStorage.getItem('username');
+  const email = sessionStorage.getItem('email');
+  const contact = sessionStorage.getItem('contact');
+  const avatar = sessionStorage.getItem('avatar');
+  if (username && email) {
+    setUser({
+      username,
+      email,
+      contact,
+      avatar
+    });
   }
-};
+  };
+
 
   const handleLogout = () => {
-    sessionStorage.removeItem('loggedIn');
-    sessionStorage.removeItem('token');
-    setShowMenu(false);
+    sessionStorage.clear();
+    setUser(null);
+    setIsLoggedIn(false);
     navigate('/');
   };
 
-  // Close the dropdown if clicked outside
-  useEffect(() => {
-    const handler = (e) => {
-      if (menuRef.current && !menuRef.current.contains(e.target)) {
-        setShowMenu(false);
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, []);
+  const handleUploadClick = () => {
+    if (isLoggedIn) {
+      navigate('/upload');
+    } else {
+      navigate('/login', { state: { from: '/upload' } });
+    }
+  };
 
   return (
-    <header>
+    <header className="navbar">
       <div className="logo">NotesMittar</div>
       <nav>
         <Link to="/">Home</Link>
         <a href="#features">Features</a>
         <Link to="/scoreboard">Scoreboard</Link>
 
-        {isLoggedIn ? (
-          <div className="profile-dp-wrapper" ref={menuRef}>
+        {isLoggedIn && user ? (
+          <>
             <img
-              src="/src/assets/images/user-icon.jpg"
-              alt="User"
+              src={user.avatar || '/src/assets/images/user-icon.jpg'} // fallback avatar
+              alt="Avatar"
               className="dp-icon"
-              onClick={() => setShowMenu(!showMenu)}
+              onClick={() => setShowProfileSidebar(prev => !prev)}
+              style={{ width: '32px', height: '32px', borderRadius: '50%', cursor: 'pointer' }}
             />
-            {showMenu && (
-              <div className="dropdown-menu">
-                {/* <button onClick={() => navigate('/profile')}>My Profile</button> */}
-                <button onClick={handleLogout}>Logout</button>
-              </div>
+            {showProfileSidebar && (
+              <Profile
+                user={user}
+                onLogout={handleLogout}
+                closeSidebar={() => setShowProfileSidebar(false)}
+              />
             )}
-          </div>
+          </>
         ) : (
           <Link to="/login">Login</Link>
         )}
