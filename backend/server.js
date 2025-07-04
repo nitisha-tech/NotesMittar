@@ -7,6 +7,7 @@ const bodyParser = require('body-parser');
 const bcrypt = require('bcryptjs');
 const Resource = require('./models/resource');
 const User = require('./models/user');
+const ResourceView = require('./models/Resource_Views'); // Add this import
 const multer = require('multer');
 const path = require('path');
 const cors = require('cors');
@@ -18,6 +19,7 @@ console.log('Starting server...');
 // MongoDB connection
 const mongoURI = 'mongodb://localhost:27017/notesmittarDB';
 
+// Connect to MongoDB
 mongoose.connect(mongoURI, {
   useNewUrlParser: true,
   useUnifiedTopology: true
@@ -28,6 +30,7 @@ mongoose.connect(mongoURI, {
   process.exit(1);
 });
 
+// GridFS Setup using mongoose connection
 let gridfsBucket;
 let isGridFSReady = false;
 
@@ -48,8 +51,9 @@ mongoose.connection.on('error', (err) => {
   console.error('❌ MongoDB connection error:', err);
 });
 
+// Multer setup for memory storage
 const storage = multer.memoryStorage();
-const upload = multer({ 
+const upload = multer({
   storage,
   fileFilter: (req, file, cb) => {
     console.log('File received:', file.originalname, file.mimetype);
@@ -60,10 +64,11 @@ const upload = multer({
     }
   },
   limits: {
-    fileSize: 10 * 1024 * 1024
+    fileSize: 10 * 1024 * 1024 // 10MB limit
   }
 });
 
+// CORS setup
 app.use(cors({
   origin: 'http://localhost:5173',
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
@@ -72,6 +77,7 @@ app.use(cors({
 
 app.use(bodyParser.json());
 
+// Helper function to upload to GridFS
 const uploadToGridFS = (fileBuffer, filename, metadata) => {
   return new Promise((resolve, reject) => {
     if (!isGridFSReady || !gridfsBucket) {
@@ -99,10 +105,33 @@ const uploadToGridFS = (fileBuffer, filename, metadata) => {
       });
     });
 
+    // Handle the upload
     uploadStream.end(fileBuffer);
   });
 };
 
+// Helper function to get user IP address
+const getUserIP = (req) => {
+  return req.headers['x-forwarded-for'] ||
+    req.connection.remoteAddress ||
+    req.socket.remoteAddress ||
+    (req.connection.socket ? req.connection.socket.remoteAddress : null);
+};
+
+// Helper function to get user from headers
+const getUserFromHeaders = async (req) => {
+  const username = req.headers.username;
+  if (!username) return null;
+
+  try {
+    return await User.findOne({ username });
+  } catch (error) {
+    console.error('Error finding user:', error);
+    return null;
+  }
+};
+
+// Health check route
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'OK',
@@ -111,6 +140,7 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// Signup route
 app.post('/api/signup', async (req, res) => {
   const { name, username, email, password } = req.body;
 
@@ -136,6 +166,7 @@ app.post('/api/signup', async (req, res) => {
   }
 });
 
+// Login route
 app.post('/api/login', async (req, res) => {
   const { usernameOrEmail, password } = req.body;
 
@@ -159,6 +190,7 @@ app.post('/api/login', async (req, res) => {
     res.status(200).json({
       message: 'Login successful',
       user: {
+        _id: user._id,
         name: user.name,
         username: user.username,
         email: user.email,
@@ -170,120 +202,316 @@ app.post('/api/login', async (req, res) => {
     res.status(500).json({ error: 'Server error during login' });
   }
 });
+// Change Password Route
+// Add these routes to your server.js file
 
-app.post('/api/upload', upload.single('pdf'), async (req, res) => {
-  console.log('Upload request received');
-
+// Get user profile route
+app.get('/api/user-profile', async (req, res) => {
   try {
-    if (!req.file) {
-      return res.status(400).json({ error: 'No file uploaded' });
+    const token = req.headers.authorization?.split(' ')[1];
+    const username = req.headers.username;
+    
+    if (!token && !username) {
+      return res.status(401).json({ error: 'Authorization required' });
     }
 
-    if (!isGridFSReady) {
-      return res.status(503).json({ error: 'GridFS not ready. Please try again in a moment.' });
+    // Try to get username from headers first, then from token if needed
+    let userIdentifier = username;
+    
+    if (!userIdentifier) {
+      // If you have JWT token logic, implement it here
+      // For now, we'll rely on username from headers
+      return res.status(401).json({ error: 'Username required in headers' });
     }
 
-    const uploadedBy = req.headers.username || 'unknown';
-    const email = req.headers.email || 'unknown@example.com';
+    const user = await User.findOne({ username: userIdentifier });
+    
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
 
-    const { course, semester, subject, type, year } = req.body;
-    let { unit } = req.body;
+    res.json({
+      _id: user._id,
+      name: user.name,
+      username: user.username,
+      email: user.email,
+      contact: user.contact || '',
+      avatar: user.avatar || null,
+      uploadCount: user.uploadCount || 0
+    });
+  } catch (error) {
+    console.error('Get user profile error:', error);
+    res.status(500).json({ error: 'Failed to fetch user profile' });
+  }
+});
 
-    if (unit) {
-      if (typeof unit === 'string') {
-        unit = [unit];
-      } else if (Array.isArray(unit)) {
+// Update user profile route
+app.post('/api/update-profile', async (req, res) => {
+  try {
+    const token = req.headers.authorization?.split(' ')[1];
+    const username = req.headers.username;
+    const { contact, avatar } = req.body;
+    
+    if (!token && !username) {
+      return res.status(401).json({ error: 'Authorization required' });
+    }
+
+    // Try to get username from headers first
+    let userIdentifier = username;
+    
+    if (!userIdentifier) {
+      // If you have JWT token logic, implement it here
+      return res.status(401).json({ error: 'Username required in headers' });
+    }
+
+    const user = await User.findOne({ username: userIdentifier });
+    
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Update user profile
+    const updatedUser = await User.findByIdAndUpdate(
+      user._id,
+      { 
+        contact: contact || user.contact,
+        avatar: avatar || user.avatar
+      },
+      { new: true }
+    );
+
+    res.json({
+      message: 'Profile updated successfully',
+      user: {
+        _id: updatedUser._id,
+        name: updatedUser.name,
+        username: updatedUser.username,
+        email: updatedUser.email,
+        contact: updatedUser.contact,
+        avatar: updatedUser.avatar,
+        uploadCount: updatedUser.uploadCount
+      }
+    });
+  } catch (error) {
+    console.error('Update profile error:', error);
+    res.status(500).json({ error: 'Failed to update profile' });
+  }
+});
+// Change user password route
+app.post('/api/change-password', async (req, res) => {
+  try {
+    const token = req.headers.authorization?.split(' ')[1];
+    const username = req.headers.username;
+    const { currentPassword, newPassword } = req.body;
+
+    if (!token || !username) {
+      return res.status(401).json({ error: 'Authorization required' });
+    }
+
+    const user = await User.findOne({ username });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const isMatch = await bcrypt.compare(currentPassword, user.password);
+    if (!isMatch) return res.status(400).json({ error: 'Current password is incorrect' });
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    user.password = hashedPassword;
+    await user.save();
+
+    res.json({ message: 'Password updated successfully' });
+  } catch (error) {
+    console.error('Password change error:', error);
+    res.status(500).json({ error: 'Failed to change password' });
+  }
+});
+
+
+// Upload Route with proper error handling
+app.post('/api/upload', (req, res) => {
+  // Use multer middleware with error handling
+  upload.single('pdf')(req, res, async (err) => {
+    // Handle multer errors
+    if (err) {
+      console.error('Multer error:', err);
+
+      if (err instanceof multer.MulterError) {
+        switch (err.code) {
+          case 'LIMIT_FILE_SIZE':
+            return res.status(400).json({
+              error: 'File too large! Please choose a file smaller than 10MB.'
+            });
+
+          default:
+            return res.status(400).json({
+              error: 'File upload error: ' + err.message
+            });
+        }
+      } else {
+        // Custom errors (like file type validation)
+        return res.status(400).json({
+          error: err.message
+        });
+      }
+    }
+
+    // Continue with the upload process
+    console.log('Upload request received');
+    console.log('Headers:', req.headers);
+    console.log('Body:', req.body);
+    console.log('File:', req.file ? req.file.originalname : 'No file');
+
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: 'No file uploaded' });
+      }
+
+      if (!isGridFSReady) {
+        return res.status(503).json({ error: 'GridFS not ready. Please try again in a moment.' });
+      }
+
+      // Extract user info from headers
+      const uploadedBy = req.headers.username || 'unknown';
+      const email = req.headers.email || 'unknown@example.com';
+
+      // Validate that user exists first
+      const existingUser = await User.findOne({
+        $or: [
+          { username: uploadedBy },
+          { email: email }
+        ]
+      });
+
+      if (!existingUser) {
+        return res.status(400).json({
+          error: 'User not found. Please login again.'
+        });
+      }
+
+      const { course, semester, subject, type, year } = req.body;
+      let { unit } = req.body;
+
+      // 🚫 Reject if PYQ for the same year already exists
+      if (type.toLowerCase() === 'pyqs' && year) {
+        const duplicatePYQ = await Resource.findOne({
+          type: 'PYQs',
+          year,
+          course,
+          semester,
+          subject
+        });
+
+        if (duplicatePYQ) {
+          return res.status(409).json({
+            error: `❌ A PYQ for year ${year} already exists for this subject.`,
+            conflict: true
+          });
+        }
+      }
+
+      // Handle unit array properly
+      if (unit) {
+        if (typeof unit === 'string') {
+          unit = [unit];
+        } else if (Array.isArray(unit)) {
+          // unit is already an array, keep it as is
+        } else {
+          unit = [];
+        }
       } else {
         unit = [];
       }
-    } else {
-      unit = [];
+
+      console.log('Processing upload for:', {
+        course,
+        semester,
+        subject,
+        type,
+        uploadedBy: existingUser.username
+      });
+
+      // Create filename
+      const timestamp = Date.now();
+      const unitStr = unit.length > 0 ? unit.join('_') : 'general';
+      const filename = `${course}_${semester}_${subject}_${type}_${unitStr}_${timestamp}${path.extname(req.file.originalname)}`;
+
+      console.log('Generated filename:', filename);
+
+      // Upload to GridFS
+      const gridFSFile = await uploadToGridFS(req.file.buffer, filename, {
+        originalName: req.file.originalname,
+        subject: subject,
+        semester: semester,
+        course: course,
+        type: type,
+        unit: unit,
+        uploadedBy: existingUser.username,
+        uploadDate: new Date()
+      });
+
+      console.log('GridFS upload successful:', gridFSFile._id);
+
+      // Check existing approved resources for this combination
+      const existing = await Resource.countDocuments({
+        course,
+        semester,
+        subject,
+        type,
+        status: 'approved'
+      });
+
+      const status = existing < 2 ? 'approved' : 'pending';
+      console.log(`Existing approved resources: ${existing}, Status: ${status}`);
+
+      // Create resource record
+      const resource = await Resource.create({
+        filename: filename,
+        fileId: gridFSFile._id,
+        course,
+        semester,
+        subject,
+        type,
+        year: year || null,
+        unit: unit,
+        status,
+        uploadedBy: existingUser.username,
+        uploadDate: new Date()
+      });
+
+      console.log('Resource record created:', resource._id);
+
+      // Update user score - FIXED: Update the existing user by their _id
+      const scoreIncrement = status === 'approved' ? 1 : 0.5;
+
+      await User.findByIdAndUpdate(
+        existingUser._id,
+        {
+          $inc: { uploadCount: scoreIncrement }
+        },
+        { new: true }
+      );
+
+      console.log(`✅ Upload completed: ${filename}, Status: ${status}`);
+      console.log(`✅ Updated uploadCount for user: ${existingUser.username}`);
+
+      res.status(201).json({
+        message: `Upload ${status}! Your contribution has been ${status === 'approved' ? 'accepted' : 'submitted for review'}.`,
+        status,
+        filename: filename,
+        fileId: gridFSFile._id
+      });
+
+    } catch (error) {
+      console.error('Upload error:', error);
+      res.status(500).json({ error: 'Upload failed: ' + error.message });
     }
-
-    const timestamp = Date.now();
-    const unitStr = unit.length > 0 ? unit.join('_') : 'general';
-    const filename = `${course}_${semester}_${subject}_${type}_${unitStr}_${timestamp}${path.extname(req.file.originalname)}`;
-
-    const gridFSFile = await uploadToGridFS(req.file.buffer, filename, {
-      originalName: req.file.originalname,
-      subject: subject,
-      semester: semester,
-      course: course,
-      type: type,
-      unit: unit,
-      uploadedBy: uploadedBy,
-      uploadDate: new Date()
-    });
-
-    const existing = await Resource.countDocuments({
-      course,
-      semester,
-      subject,
-      type,
-      status: 'approved'
-    });
-
-    const status = existing < 2 ? 'approved' : 'pending';
-
-    const resource = await Resource.create({
-      filename: filename,
-      fileId: gridFSFile._id,
-      course,
-      semester,
-      subject,
-      type,
-      year: year || null,
-      unit: unit,
-      status,
-      uploadedBy,
-      uploadDate: new Date()
-    });
-
-    const scoreIncrement = status === 'approved' ? 1 : 0.5;
-
-    await User.findOneAndUpdate(
-      { email },
-      {
-        $setOnInsert: { name: uploadedBy, registeredAt: new Date() },
-        $inc: { uploadCount: scoreIncrement }
-      },
-      { upsert: true, new: true }
-    );
-
-    res.status(201).json({ 
-      message: `Upload ${status}! Your contribution has been ${status === 'approved' ? 'accepted' : 'submitted for review'}.`,
-      status,
-      filename: filename,
-      fileId: gridFSFile._id
-    });
-
-  } catch (error) {
-    console.error('Upload error:', error);
-    res.status(500).json({ error: 'Upload failed: ' + error.message });
-  }
-});
-const ContactMessage = require('./models/ContactMessage');
-
-app.post('/api/contact', async (req, res) => {
-  const { name, email, message } = req.body;
-
-  if (!name || !email || !message) {
-    return res.status(400).json({ error: 'All fields are required' });
-  }
-
-  try {
-    const savedMessage = await ContactMessage.create({ name, email, message });
-    console.log('📩 Contact form submission:', savedMessage);
-    res.status(201).json({ message: 'Message received successfully!' });
-  } catch (error) {
-    console.error('❌ Contact form error:', error);
-    res.status(500).json({ error: 'Failed to submit message' });
-  }
+  });
 });
 
-
+// Fetch Contribution History Route
 app.get('/api/my-resources', async (req, res) => {
   const username = req.headers.username;
+
+  console.log('Fetching resources for user:', username);
 
   if (!username) {
     return res.status(400).json({ error: 'Username required in headers' });
@@ -291,6 +519,7 @@ app.get('/api/my-resources', async (req, res) => {
 
   try {
     const resources = await Resource.find({ uploadedBy: username }).sort({ uploadDate: -1 });
+    console.log(`Found ${resources.length} resources for user ${username}`);
 
     const enriched = resources.map(doc => ({
       filename: doc.filename,
@@ -312,26 +541,172 @@ app.get('/api/my-resources', async (req, res) => {
   }
 });
 
+// NEW: Record view endpoint
+app.post('/api/record-view/:resourceId', async (req, res) => {
+  try {
+    const { resourceId } = req.params;
+    const user = await getUserFromHeaders(req);
+
+    if (!user) {
+      return res.status(401).json({ error: 'User authentication required' });
+    }
+
+    // Check if resource exists
+    const resource = await Resource.findById(resourceId);
+    if (!resource) {
+      return res.status(404).json({ error: 'Resource not found' });
+    }
+
+    // Record the view
+    const viewData = {
+      userId: user._id,
+      resourceId: new mongoose.Types.ObjectId(resourceId),
+      ipAddress: getUserIP(req),
+      userAgent: req.headers['user-agent'],
+      sessionId: req.headers['session-id'] || null,
+      referrerUrl: req.headers.referer || null
+    };
+
+    const view = await ResourceView.recordView(viewData);
+
+    if (view) {
+      // Increment view count in Resource model
+      await Resource.findByIdAndUpdate(
+        resourceId,
+        { $inc: { viewCount: 1 } },
+        { new: true }
+      );
+
+      console.log(`✅ View recorded for resource ${resourceId} by user ${user.username}`);
+      res.json({ success: true, message: 'View recorded' });
+    } else {
+      res.json({ success: false, message: 'View already recorded today' });
+    }
+
+  } catch (error) {
+    console.error('Error recording view:', error);
+    res.status(500).json({ error: 'Failed to record view' });
+  }
+});
+// CONTACT US PORTION
+require('dotenv').config(); // Load .env variables
+
+const nodemailer = require('nodemailer');
+const ContactMessage = require('./models/ContactMessage');
+console.log('SMTP_EMAIL:', process.env.SMTP_EMAIL);
+console.log('SMTP_PASSWORD:', process.env.SMTP_PASSWORD);
+console.log('ADMIN_EMAILS:', process.env.ADMIN_EMAILS);
+
+// ✅ Set up nodemailer transporter using environment variables
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: process.env.SMTP_EMAIL,        // e.g., your Gmail
+    pass: process.env.SMTP_PASSWORD      // your 16-character app password
+  }
+});
+transporter.verify((error, success) => {
+  if (error) {
+    console.error('❌ Transporter verification failed:', error);
+  } else {
+    console.log('✅ Transporter is ready to send emails');
+  }
+});
+
+
+// ✅ POST route to handle contact form submissions
+app.post('/api/contact', async (req, res) => {
+  const { name, email, message } = req.body;
+
+  // Basic validation
+  if (!name || !email || !message) {
+    return res.status(400).json({ error: 'All fields are required' });
+  }
+
+  try {
+    // ✅ Save message to MongoDB
+    const savedMessage = await ContactMessage.create({ name, email, message });
+    console.log('📩 Contact form submission saved:', savedMessage);
+
+    // ✅ Read admin email list from .env
+    const adminEmails = process.env.ADMIN_EMAILS.split(',').map(e => e.trim());
+
+    // ✅ Send email to all admins
+    const mailOptions = {
+      from: process.env.SMTP_EMAIL,
+      to: adminEmails,
+      subject: `New Contact Message from ${name}`,
+      text: `You received a new contact message:\n\nName: ${name}\nEmail: ${email}\n\nMessage:\n${message}`
+    };
+
+    await transporter.sendMail(mailOptions);
+
+    res.status(201).json({ message: 'Message received and emailed to admins!' });
+  } catch (error) {
+    console.error('❌ Contact form error:', error.message, error.response || '');
+    res.status(500).json({ error: 'Failed to submit message or send email' });
+  }
+});
+
+
+// Route to download/view files with download tracking
 app.get('/api/file/:id', async (req, res) => {
   try {
     const fileId = new mongoose.Types.ObjectId(req.params.id);
+    const isDownload = req.query.download === 'true';
 
+    console.log('Requesting file:', fileId, 'Download:', isDownload);
+
+    // Get file info first
     const files = await gridfsBucket.find({ _id: fileId }).toArray();
 
     if (!files || files.length === 0) {
+      console.log('File not found:', fileId);
       return res.status(404).json({ error: 'File not found' });
     }
 
     const file = files[0];
+    console.log('File found:', file.filename);
+
+    // Find the resource record
+    const resource = await Resource.findOne({ fileId: fileId });
+
+    if (resource && isDownload) {
+      // Increment download count
+      await Resource.findByIdAndUpdate(
+        resource._id,
+        { $inc: { downloadCount: 1 } },
+        { new: true }
+      );
+      console.log(`✅ Download count incremented for resource ${resource._id}`);
+    }
+
+    // Construct custom filename based on metadata
+    let safeFilename = file.filename;
+    if (file.metadata) {
+      const { course, semester, subject, type, unit } = file.metadata;
+      const titleParts = [course, semester, subject, type, ...(unit || [])];
+      safeFilename = titleParts
+        .filter(Boolean)
+        .join(' ')
+        .replace(/_/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    }
 
     res.set({
       'Content-Type': 'application/pdf',
-      'Content-Disposition': `attachment; filename="${file.filename}"`
+      'Content-Disposition': isDownload
+        ? `attachment; filename="${safeFilename}.pdf"`
+        : `inline; filename="${safeFilename}.pdf"`
     });
 
+
+    // Create download stream
     const downloadStream = gridfsBucket.openDownloadStream(fileId);
 
     downloadStream.on('error', (error) => {
+      console.error('Download error:', error);
       res.status(500).json({ error: 'Error downloading file' });
     });
 
@@ -342,48 +717,7 @@ app.get('/api/file/:id', async (req, res) => {
   }
 });
 
-// FIXED: Single /api/resources endpoint with proper filtering and user lookup
-// Fix 2: In your server.js - Update the resources endpoint to handle year conversion
-app.get('/api/resources', async (req, res) => {
-  try {
-    const { course, semester, subject, type, year } = req.query;
-    const query = { status: 'approved' };
-
-    if (course) query.course = course;
-    if (semester) query.semester = semester;
-    if (subject) query.subject = subject;
-    if (type) query.type = type;
-    if (type === 'PYQs' && year) {
-      query.year = parseInt(year);
-    }
-
-    const resources = await Resource.find(query);
-
-    const modifiedResources = resources.map(res => {
-      let title = '';
-      if (res.type === 'Notes') {
-        title = res.unit?.length > 0 ? `Unit ${res.unit.join(', ')}` : 'Notes';
-      } else {
-        title = res.filename || 'Untitled';
-      }
-
-      return {
-        _id: res._id,
-        title,
-        author: res.uploadedBy,
-        fileUrl: `http://localhost:5000/api/download/${res.fileId}`,
-        type: res.type,
-        downloadCount: res.downloadCount
-      };
-    });
-
-    res.status(200).json(modifiedResources);
-  } catch (err) {
-    console.error('Resource Fetch Error:', err);
-    res.status(500).json({ error: 'Unable to fetch resources' });
-  }
-});
-
+// Route to get all files info
 app.get('/api/files', async (req, res) => {
   try {
     if (!isGridFSReady) {
@@ -391,13 +725,214 @@ app.get('/api/files', async (req, res) => {
     }
 
     const files = await gridfsBucket.find().toArray();
+    console.log(`Found ${files.length} files in GridFS`);
     res.json(files);
   } catch (error) {
+    console.error('Files fetch error:', error);
     res.status(500).json({ error: 'Error fetching files' });
+  }
+});
+
+app.get('/api/leaderboard', async (req, res) => {
+  try {
+    const leaderboard = await Resource.aggregate([
+      { $match: { status: 'approved' } }, // ✅ Only approved resources
+
+      {
+        $group: {
+          _id: '$uploadedBy', // ✅ group by username
+          totalUploads: { $sum: 1 },
+          totalUpvotes: { $sum: '$upvotes' },
+          avgRelevanceScore: { $avg: '$relevanceScore' }
+        }
+      },
+      {
+        $lookup: {
+          from: 'users',
+          localField: '_id',          // username from Resource
+          foreignField: 'username',   // username in User
+          as: 'user'
+        }
+      },
+      { $unwind: '$user' },
+      {
+        $project: {
+          uploaderId: '$user._id',
+          username: '$user.username',
+          name: '$user.name',
+          email: '$user.email',
+          contact: '$user.contact',
+          branch: '$user.branch',
+          totalUploads: 1,
+          totalUpvotes: 1,
+          avgRelevanceScore: { $round: ['$avgRelevanceScore', 2] },
+          badge: {
+            $switch: {
+              branches: [
+                { case: { $gte: ['$totalUploads', 50] }, then: 'Gold' },
+                { case: { $gte: ['$totalUploads', 20] }, then: 'Silver' },
+                { case: { $gte: ['$totalUploads', 5] }, then: 'Bronze' }
+              ],
+              default: 'Newbie'
+            }
+          }
+        }
+      },
+      {
+        $sort: { totalUploads: -1 }
+      }
+    ]);
+
+    res.status(200).json(leaderboard);
+  } catch (err) {
+    console.error('❌ Leaderboard fetch error:', err);
+    res.status(500).json({ error: 'Failed to fetch leaderboard' });
+  }
+});
+app.get('/api/contributor/:username/resources', async (req, res) => {
+  const { username } = req.params;
+  try {
+    const user = await User.findOne({ username });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const resources = await Resource.find({
+      uploadedBy: username,
+      status: 'approved'
+    });
+
+    res.json({
+      contributor: {
+        name: user.name,
+        username: user.username,
+        branch: user.branch,
+        totalUploads: user.uploadCount,
+        badge:
+          user.uploadCount >= 50
+            ? 'Gold'
+            : user.uploadCount >= 20
+              ? 'Silver'
+              : user.uploadCount >= 5
+                ? 'Bronze'
+                : 'Newbie'
+      },
+      resources
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error fetching contributor info.' });
+  }
+});
+
+
+// Get user's rank
+app.get('/api/my-rank', async (req, res) => {
+  const username = req.headers.username;
+
+  if (!username) {
+    return res.status(400).json({ error: 'Username required in headers' });
+  }
+
+  try {
+    const user = await User.findOne({ username });
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Count users with higher uploadCount
+    const rank = await User.countDocuments({
+      uploadCount: { $gt: user.uploadCount }
+    }) + 1;
+
+    // Get total users with uploads
+    const totalUsers = await User.countDocuments({
+      uploadCount: { $gt: 0 }
+    });
+
+    res.json({
+      rank,
+      uploadCount: user.uploadCount,
+      totalUsers,
+      percentile: totalUsers > 0 ? Math.round(((totalUsers - rank + 1) / totalUsers) * 100) : 0
+    });
+  } catch (error) {
+    console.error('Rank fetch error:', error);
+    res.status(500).json({ error: 'Failed to fetch rank' });
+  }
+});
+
+// Fetch filtered resources with view and download counts
+app.get('/api/resources', async (req, res) => {
+  try {
+    const { course, semester, subject, type } = req.query;
+
+    if (!course || !semester || !subject || !type) {
+      return res.status(400).json({ error: 'Missing required query parameters' });
+    }
+
+    const resources = await Resource.find({
+      course,
+      semester,
+      subject,
+      type,
+      status: 'approved'
+    }).sort({ uploadDate: -1 });
+
+    // ✅ Fetch original filename from GridFS using fileId and include counts
+    const enriched = await Promise.all(
+      resources.map(async (doc) => {
+        let originalName = '';
+        try {
+          const files = await gridfsBucket.find({ _id: doc.fileId }).toArray();
+          const gridFile = files[0];
+          originalName = gridFile?.metadata?.originalName || doc.filename;
+        } catch (err) {
+          console.warn(`GridFS lookup failed for ${doc.fileId}:`, err.message);
+          originalName = doc.filename;
+        }
+
+        // Get view count from ResourceView collection
+        const viewCount = await ResourceView.getViewCountByResource(doc._id);
+        function toTitleCase(str) {
+          return str
+            .split(' ')
+            .map(word => word[0]?.toUpperCase() + word.slice(1)?.toLowerCase())
+            .join(' ');
+        }
+
+        return {
+          _id: doc._id,
+          originalName,
+          title: toTitleCase([
+            doc.course,
+            doc.semester,
+            doc.subject,
+            doc.type,
+            ...(doc.type?.toLowerCase() === 'pyq' && doc.year ? [doc.year] : []),
+            ...(Array.isArray(doc.unit) ? doc.unit : [])
+          ].filter(Boolean).join(' ')),
+
+
+          // ✅ Now sent to frontend
+          filename: doc.filename,      // fallback
+          author: doc.uploadedBy,
+          year: doc.year,
+          unit: doc.unit,
+          viewCount: viewCount,        // ✅ View count from ResourceView
+          downloadCount: doc.downloadCount || 0, // ✅ Download count from Resource
+          fileUrl: `http://localhost:5000/api/file/${doc.fileId}`
+        };
+      })
+    );
+
+    res.json(enriched);
+  } catch (error) {
+    console.error('Error fetching resources:', error);
+    res.status(500).json({ error: 'Failed to fetch resources' });
   }
 });
 
 const PORT = 5000;
 app.listen(PORT, () => {
   console.log(`🚀 Server running at http://localhost:${PORT}`);
+  console.log(`📊 Health check: http://localhost:${PORT}/api/health`);
 });
