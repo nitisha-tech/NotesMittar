@@ -1,4 +1,6 @@
 
+// Update your User model (models/user.js) to include these fields:
+
 const mongoose = require('mongoose');
 
 const userSchema = new mongoose.Schema({
@@ -33,6 +35,14 @@ const userSchema = new mongoose.Schema({
     default: null
   },
   branch: {
+    type: String,
+    default: ''
+  },
+  semester: {
+    type: String,
+    default: ''
+  },
+  description: {
     type: String,
     default: ''
   }
