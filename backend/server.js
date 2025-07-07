@@ -1,6 +1,7 @@
 //ContactUS portion starting at line 265
 // server.js
 // server.js
+// CHANGES -> PROFILE(starts from line 209) and Contact US(line 591)
 const express = require('express');
 const mongoose = require('mongoose');
 const bodyParser = require('body-parser');
@@ -230,15 +231,19 @@ app.get('/api/user-profile', async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    res.json({
-      _id: user._id,
-      name: user.name,
-      username: user.username,
-      email: user.email,
-      contact: user.contact || '',
-      avatar: user.avatar || null,
-      uploadCount: user.uploadCount || 0
-    });
+  res.json({
+    _id: user._id,
+    name: user.name,
+    username: user.username,
+    email: user.email,
+    contact: user.contact || '',
+    avatar: user.avatar || null,
+    description: user.description || '',
+    semester: user.semester || '',
+    branch: user.branch || '',
+    uploadCount: user.uploadCount || 0
+  });
+
   } catch (error) {
     console.error('Get user profile error:', error);
     res.status(500).json({ error: 'Failed to fetch user profile' });
@@ -250,32 +255,27 @@ app.post('/api/update-profile', async (req, res) => {
   try {
     const token = req.headers.authorization?.split(' ')[1];
     const username = req.headers.username;
-    const { contact, avatar } = req.body;
-    
+    const { contact, avatar, description, semester, branch } = req.body;
+
     if (!token && !username) {
       return res.status(401).json({ error: 'Authorization required' });
     }
 
-    // Try to get username from headers first
-    let userIdentifier = username;
-    
-    if (!userIdentifier) {
-      // If you have JWT token logic, implement it here
-      return res.status(401).json({ error: 'Username required in headers' });
-    }
+    const userIdentifier = username;
 
     const user = await User.findOne({ username: userIdentifier });
-    
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    // Update user profile
     const updatedUser = await User.findByIdAndUpdate(
       user._id,
-      { 
+      {
         contact: contact || user.contact,
-        avatar: avatar || user.avatar
+        avatar: avatar || user.avatar,
+        description: description || user.description,
+        semester: semester || user.semester,
+        branch: branch || user.branch
       },
       { new: true }
     );
@@ -289,6 +289,9 @@ app.post('/api/update-profile', async (req, res) => {
         email: updatedUser.email,
         contact: updatedUser.contact,
         avatar: updatedUser.avatar,
+        description: updatedUser.description,
+        semester: updatedUser.semester,
+        branch: updatedUser.branch,
         uploadCount: updatedUser.uploadCount
       }
     });
@@ -297,6 +300,7 @@ app.post('/api/update-profile', async (req, res) => {
     res.status(500).json({ error: 'Failed to update profile' });
   }
 });
+
 // Change user password route
 app.post('/api/change-password', async (req, res) => {
   try {
@@ -930,6 +934,8 @@ app.get('/api/resources', async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch resources' });
   }
 });
+
+
 
 const PORT = 5000;
 app.listen(PORT, () => {
