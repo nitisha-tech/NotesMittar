@@ -1,146 +1,76 @@
 
 // src/components/Profile.jsx
-import React, { useState } from 'react';
-import '../style/Profile.css';
+import React from 'react';
+import '../style/Sidebar.css';
 
-export default function Profile({ user, onLogout }) {
-  const [showProfile, setShowProfile] = useState(false);
-  const [contact, setContact] = useState(user.contact || '');
-  const [showChangePassword, setShowChangePassword] = useState(false);
-  const [passwordData, setPasswordData] = useState({ current: '', new: '', confirm: '' });
+const Sidebar = ({ isOpen, onClose, user, onLogout }) => {
+  if (!user) return null;
 
-  const toggleProfile = () => setShowProfile(!showProfile);
-
-  const handlePasswordChange = async () => {
-    if (passwordData.new !== passwordData.confirm) {
-      alert('Passwords do not match');
-      return;
-    }
-
-    if (passwordData.new.length < 6) {
-      alert('New password must be at least 6 characters long');
-      return;
-    }
-
-    try {
-      const token = sessionStorage.getItem('token');
-      const res = await fetch('http://localhost:5000/api/change-password', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-          username: user.username
-        },
-        body: JSON.stringify({
-          currentPassword: passwordData.current,
-          newPassword: passwordData.new
-        })
-      });
-
-      const data = await res.json();
-      alert(data.message || data.error);
-      if (res.ok) {
-        setShowChangePassword(false);
-        setPasswordData({ current: '', new: '', confirm: '' });
-      }
-    } catch (err) {
-      console.error(err);
-      alert('Error changing password');
-    }
+  const handleProfileClick = () => {
+    window.location.href = '/profile';
+    onClose();
   };
 
-  const handleSaveProfile = async () => {
-    try {
-      const token = sessionStorage.getItem('token');
-      const res = await fetch('http://localhost:5000/api/update-profile', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-          username: user.username
-        },
-        body: JSON.stringify({ contact })
-      });
-
-      const data = await res.json();
-      if (res.ok) {
-        alert('Profile updated successfully!');
-      } else {
-        alert(data.error || 'Failed to update profile');
-      }
-    } catch (err) {
-      console.error(err);
-      alert('Error updating profile');
-    }
+  // Generate initials if no avatar
+  const getInitials = (username) => {
+    return username ? username.charAt(0).toUpperCase() : 'U';
   };
 
   return (
     <>
-      <div className="profile-icon" onClick={toggleProfile}>
-        <span className="profile-icon-circle">👤</span>
-      </div>
+      {isOpen && <div className="sidebar-overlay" onClick={onClose}></div>}
+      
+      <div className={`sidebar ${isOpen ? 'open' : ''}`}>
+        <div className="sidebar-header">
+          <h3>Menu</h3>
+          <button className="close-btn" onClick={onClose}>×</button>
+        </div>
 
-      {showProfile && (
-        <>
-          <div className="profile-overlay" onClick={toggleProfile}></div>
-          <div className="profile-sidebar">
-            <div className="profile-header">
-              <button className="close-profile" onClick={toggleProfile}>×</button>
-              <h3 onClick={() => window.location.href = `/leaderboard#${user.username}`}>
-                {user.username}
-              </h3>
-              <p>{user.email}</p>
-              {/* ✅ Add Upload Count */}
-              <p>📁 Uploads: <strong>{user.uploadCount || 0}</strong></p>
-
-              <input
-                type="text"
-                value={contact}
-                placeholder="Contact (optional)"
-                onChange={(e) => setContact(e.target.value)}
-              />
+        <div className="sidebar-user-info">
+          {user.avatar ? (
+            <img
+              src={user.avatar}
+              alt="User Avatar"
+              className="sidebar-user-avatar"
+            />
+          ) : (
+            <div className="sidebar-user-avatar-placeholder">
+              {getInitials(user.username)}
             </div>
-
-            <div className="profile-actions">
-              <button onClick={handleSaveProfile} className="save-profile-btn">
-                Save Profile
-              </button>
-              
-              <button onClick={() => setShowChangePassword(!showChangePassword)}>
-                {showChangePassword ? 'Cancel Password Change' : 'Change Password'}
-              </button>
-
-              {showChangePassword && (
-                <div className="password-box">
-                  <input
-                    type="password"
-                    placeholder="Current Password"
-                    value={passwordData.current}
-                    onChange={(e) => setPasswordData({ ...passwordData, current: e.target.value })}
-                  />
-                  <input
-                    type="password"
-                    placeholder="New Password"
-                    value={passwordData.new}
-                    onChange={(e) => setPasswordData({ ...passwordData, new: e.target.value })}
-                  />
-                  <input
-                    type="password"
-                    placeholder="Confirm New Password"
-                    value={passwordData.confirm}
-                    onChange={(e) => setPasswordData({ ...passwordData, confirm: e.target.value })}
-                  />
-                  <button onClick={handlePasswordChange}>Submit</button>
-                </div>
-              )}
-
-              <button onClick={onLogout} className="logout-btn">
-                Logout
-              </button>
-            </div>
+          )}
+          <div className="sidebar-user-details">
+            <h4>{user.username}</h4>
+            <p>{user.email}</p>
           </div>
-        </>
-      )}
+        </div>
+
+        <div className="sidebar-content">
+          <div className="sidebar-buttons">
+            <button className="sidebar-btn profile-btn" onClick={handleProfileClick}>
+              <div className="btn-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                  <circle cx="12" cy="7" r="4"></circle>
+                </svg>
+              </div>
+              <span>Profile</span>
+            </button>
+            
+            <button className="sidebar-btn logout-btn" onClick={onLogout}>
+              <div className="btn-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                  <polyline points="16,17 21,12 16,7"></polyline>
+                  <line x1="21" y1="12" x2="9" y2="12"></line>
+                </svg>
+              </div>
+              <span>Logout</span>
+            </button>
+          </div>
+        </div>
+      </div>
     </>
   );
-}
+};
+
+export default Sidebar;
