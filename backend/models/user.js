@@ -1,6 +1,3 @@
-
-// Update your User model (models/user.js) to include these fields:
-
 const mongoose = require('mongoose');
 
 const userSchema = new mongoose.Schema({
@@ -26,6 +23,10 @@ const userSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
+  isAdmin: {
+    type: Boolean,
+    default: false
+  },
   contact: {
     type: String,
     default: ''
@@ -45,9 +46,23 @@ const userSchema = new mongoose.Schema({
   description: {
     type: String,
     default: ''
-  }
+  },
+  registeredAt: {
+    type: Date,
+    default: Date.now
+  },
+  status: {
+    type: String,
+    enum: ['active', 'suspended'],
+    default: 'active'
+  },
+ 
+
+  
+
 }, {
-  timestamps: true
+  timestamps: true,  // includes createdAt and updatedAt
+  versionKey: false  // disables __v field
 });
 
 module.exports = mongoose.model('User', userSchema);
