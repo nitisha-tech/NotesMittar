@@ -1,7 +1,3 @@
-//ContactUS portion starting at line 265
-// server.js
-// server.js
-// CHANGES -> PROFILE(starts from line 209) and Contact US(line 591)
 const express = require('express');
 const mongoose = require('mongoose');
 const bodyParser = require('body-parser');
@@ -209,41 +205,54 @@ app.post('/api/login', async (req, res) => {
 // Get user profile route
 app.get('/api/user-profile', async (req, res) => {
   try {
-    const token = req.headers.authorization?.split(' ')[1];
+  
     const username = req.headers.username;
     
-    if (!token && !username) {
+    console.log('Profile request headers:', { 
+
+      username: username,
+      allHeaders: req.headers 
+    });
+    
+    if (!username) {
       return res.status(401).json({ error: 'Authorization required' });
     }
-
-    // Try to get username from headers first, then from token if needed
+    
     let userIdentifier = username;
     
+    
     if (!userIdentifier) {
-      // If you have JWT token logic, implement it here
-      // For now, we'll rely on username from headers
-      return res.status(401).json({ error: 'Username required in headers' });
+      return res.status(401).json({ error: 'Username required' });
     }
-
+    
     const user = await User.findOne({ username: userIdentifier });
     
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
-
-  res.json({
-    _id: user._id,
-    name: user.name,
-    username: user.username,
-    email: user.email,
-    contact: user.contact || '',
-    avatar: user.avatar || null,
-    description: user.description || '',
-    semester: user.semester || '',
-    branch: user.branch || '',
-    uploadCount: user.uploadCount || 0
-  });
-
+    
+    // Map backend fields to frontend expected fields
+    res.json({
+      _id: user._id,
+      name: user.name,
+      fullName: user.name, // Map name to fullName for frontend
+      username: user.username,
+      email: user.email,
+      contact: user.contact || '',
+      phone: user.contact || '', // Map contact to phone for frontend
+      avatar: user.avatar || '👨‍🎓',
+      description: user.description || '',
+      semester: user.semester || '',
+      branch: user.branch || '',
+      uploadCount: user.uploadCount || 0,
+      // Add missing fields expected by frontend
+      dateJoined: user.createdAt || user.dateJoined || new Date(),
+      rank: user.rank || 'Bronze Member',
+      points: user.points || 0,
+      isAdmin: user.isAdmin || false,
+      createdAt: user.createdAt
+    });
+    
   } catch (error) {
     console.error('Get user profile error:', error);
     res.status(500).json({ error: 'Failed to fetch user profile' });
@@ -253,46 +262,77 @@ app.get('/api/user-profile', async (req, res) => {
 // Update user profile route
 app.post('/api/update-profile', async (req, res) => {
   try {
-    const token = req.headers.authorization?.split(' ')[1];
     const username = req.headers.username;
-    const { contact, avatar, description, semester, branch } = req.body;
-
-    if (!token && !username) {
+    const { 
+      contact, 
+      phone, // Handle both contact and phone
+      avatar, 
+      description, 
+      semester, 
+      branch, 
+      email,
+      fullName 
+    } = req.body;
+    
+    console.log('Update profile request:', { 
+      username: username,
+      bodyKeys: Object.keys(req.body)
+    });
+    
+    if ( !username) {
       return res.status(401).json({ error: 'Authorization required' });
     }
-
-    const userIdentifier = username;
-
+    
+    let userIdentifier = username;
+    
+    
+    
+    if (!userIdentifier) {
+      return res.status(401).json({ error: 'Username required' });
+    }
+    
     const user = await User.findOne({ username: userIdentifier });
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
-
+    
+    // Prepare update object with field mapping
+    const updateData = {};
+    
+    if (contact !== undefined) updateData.contact = contact;
+    if (phone !== undefined) updateData.contact = phone; // Map phone to contact
+    if (avatar !== undefined) updateData.avatar = avatar;
+    if (description !== undefined) updateData.description = description;
+    if (semester !== undefined) updateData.semester = semester;
+    if (branch !== undefined) updateData.branch = branch;
+    if (email !== undefined) updateData.email = email;
+    if (fullName !== undefined) updateData.name = fullName; // Map fullName to name
+    
     const updatedUser = await User.findByIdAndUpdate(
       user._id,
-      {
-        contact: contact || user.contact,
-        avatar: avatar || user.avatar,
-        description: description || user.description,
-        semester: semester || user.semester,
-        branch: branch || user.branch
-      },
+      updateData,
       { new: true }
     );
-
+    
     res.json({
       message: 'Profile updated successfully',
       user: {
         _id: updatedUser._id,
         name: updatedUser.name,
+        fullName: updatedUser.name, // Map name to fullName
         username: updatedUser.username,
         email: updatedUser.email,
         contact: updatedUser.contact,
+        phone: updatedUser.contact, // Map contact to phone
         avatar: updatedUser.avatar,
         description: updatedUser.description,
         semester: updatedUser.semester,
         branch: updatedUser.branch,
-        uploadCount: updatedUser.uploadCount
+        uploadCount: updatedUser.uploadCount,
+        dateJoined: updatedUser.createdAt || updatedUser.dateJoined,
+        rank: updatedUser.rank || 'Bronze Member',
+        points: updatedUser.points || 0,
+        isAdmin: updatedUser.isAdmin || false
       }
     });
   } catch (error) {
@@ -300,28 +340,39 @@ app.post('/api/update-profile', async (req, res) => {
     res.status(500).json({ error: 'Failed to update profile' });
   }
 });
-
 // Change user password route
 app.post('/api/change-password', async (req, res) => {
   try {
-    const token = req.headers.authorization?.split(' ')[1];
     const username = req.headers.username;
     const { currentPassword, newPassword } = req.body;
-
-    if (!token || !username) {
+    
+    console.log('Change password request:', { 
+      username: username,
+      hasCurrentPassword: !!currentPassword,
+      hasNewPassword: !!newPassword
+    });
+    
+    if ( !username) {
       return res.status(401).json({ error: 'Authorization required' });
     }
+    
+    let userIdentifier = username;
 
-    const user = await User.findOne({ username });
+    
+    if (!userIdentifier) {
+      return res.status(401).json({ error: 'Username required' });
+    }
+    
+    const user = await User.findOne({ username: userIdentifier });
     if (!user) return res.status(404).json({ error: 'User not found' });
-
+    
     const isMatch = await bcrypt.compare(currentPassword, user.password);
     if (!isMatch) return res.status(400).json({ error: 'Current password is incorrect' });
-
+    
     const hashedPassword = await bcrypt.hash(newPassword, 10);
     user.password = hashedPassword;
     await user.save();
-
+    
     res.json({ message: 'Password updated successfully' });
   } catch (error) {
     console.error('Password change error:', error);
@@ -934,6 +985,96 @@ app.get('/api/resources', async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch resources' });
   }
 });
+//Adding new portion for ADMIN
+// Middleware to restrict access to admin only
+const adminUsernames = ['q', 'h', 'rahul']; // replace with your team usernames
+const AdminAction = require('./models/AdminAction');
+
+function isAdmin(req, res, next) {
+  const username = req.headers.username;
+  console.log("🔐 Admin Check:", username); // ADD THIS LINE
+
+  if (adminUsernames.includes(username)) {
+    next();
+  } else {
+    
+    return res.status(403).json({ error: 'Access denied. Admins only.' });
+  }
+}
+// 1)For ManageContributors
+app.get('/api/admin/contributors', isAdmin, async (req, res) => {
+  try {
+    const contributors = await User.find(
+      { uploadCount: { $gt: 0 } },
+      'name username uploadCount status suspensionReason'
+    ); // select only the required fields
+
+    res.json(contributors);
+  } catch (err) {
+    console.error('Error fetching contributors:', err);
+    res.status(500).json({ error: 'Failed to fetch contributors' });
+  }
+});
+
+
+app.post('/api/admin/contributor/suspend', isAdmin, async (req, res) => {
+  try {
+    const { username, reason } = req.body;
+    const adminUsername = req.headers.username;
+
+    const user = await User.findOne({ username });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const wasSuspended = user.status === 'active';
+    user.status = wasSuspended ? 'suspended' : 'active';
+    user.suspensionReason = wasSuspended ? (reason || 'No reason provided') : '';
+
+    await user.save();
+
+    // Save admin action log
+    const log = new AdminAction({
+      adminUsername,
+      targetUsername: username,
+      actionType: wasSuspended ? 'suspend' : 'activate',
+      reason: wasSuspended ? (reason || '') : ''
+    });
+    await log.save();
+
+    res.json({ message: `User ${user.status} successfully`, user });
+  } catch (err) {
+    console.error('Error suspending contributor:', err);
+    res.status(500).json({ error: 'Failed to update contributor status' });
+  }
+});
+app.get('/api/admin/actions', isAdmin, async (req, res) => {
+  try {
+    const actions = await AdminAction.find().sort({ timestamp: -1 });
+    res.json(actions);
+  } catch (err) {
+    console.error('Error fetching admin actions:', err);
+    res.status(500).json({ error: 'Failed to fetch admin actions' });
+  }
+});
+
+app.post('/api/admin/contributor/reason', isAdmin, async (req, res) => {
+  try {
+    const { username, reason } = req.body;
+    const user = await User.findOne({ username });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    user.suspensionReason = reason || '';
+    await user.save();
+
+    res.json({ message: 'Suspension reason updated', user });
+  } catch (err) {
+    console.error('Error updating reason:', err);
+    res.status(500).json({ error: 'Failed to update reason' });
+  }
+});
+
+
+
+
 
 
 
