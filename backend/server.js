@@ -1,3 +1,8 @@
+
+//ContactUS portion starting at line 265
+// server.js
+// server.js
+// CHANGES -> PROFILE(starts from line 209) and Contact US(line 591)
 const express = require('express');
 const mongoose = require('mongoose');
 const bodyParser = require('body-parser');
@@ -988,19 +993,36 @@ app.get('/api/resources', async (req, res) => {
 //Adding new portion for ADMIN
 // Middleware to restrict access to admin only
 const adminUsernames = ['q', 'h', 'rahul']; // replace with your team usernames
-const AdminAction = require('./models/AdminAction');
+const AdminAction = require('./models/Transaction');
 
-function isAdmin(req, res, next) {
-  const username = req.headers.username;
-  console.log("🔐 Admin Check:", username); // ADD THIS LINE
+const isAdmin = async (req, res, next) => {
+  try {
+    const username = req.headers.username;
+    console.log('🔐 Admin check for username:', username); // Debug log
 
-  if (adminUsernames.includes(username)) {
+    if (!username) {
+      return res.status(401).json({ error: 'Authorization required' });
+    }
+
+    const user = await User.findOne({ username });
+    if (!user) {
+      console.log('❌ No user found');
+    } else if (!user.isAdmin) {
+      console.log('❌ User is not admin');
+    }
+
+    if (!user || !user.isAdmin) {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    req.adminUser = user;
     next();
-  } else {
-    
-    return res.status(403).json({ error: 'Access denied. Admins only.' });
+  } catch (error) {
+    console.error('❌ Admin check failed:', error);
+    res.status(500).json({ error: 'Authorization check failed' });
   }
-}
+};
+
 // 1)For ManageContributors
 app.get('/api/admin/contributors', isAdmin, async (req, res) => {
   try {
@@ -1020,23 +1042,22 @@ app.get('/api/admin/contributors', isAdmin, async (req, res) => {
 app.post('/api/admin/contributor/suspend', isAdmin, async (req, res) => {
   try {
     const { username, reason } = req.body;
-    const adminUsername = req.headers.username;
+    const adminUser = req.adminUser;
 
     const user = await User.findOne({ username });
     if (!user) return res.status(404).json({ error: 'User not found' });
 
-    const wasSuspended = user.status === 'active';
-    user.status = wasSuspended ? 'suspended' : 'active';
-    user.suspensionReason = wasSuspended ? (reason || 'No reason provided') : '';
-
+    const isSuspending = user.status === 'active';
+    user.status = isSuspending ? 'suspended' : 'active';
+    user.suspensionReason = isSuspending ? (reason || 'No reason provided') : '';
     await user.save();
 
-    // Save admin action log
-    const log = new AdminAction({
-      adminUsername,
-      targetUsername: username,
-      actionType: wasSuspended ? 'suspend' : 'activate',
-      reason: wasSuspended ? (reason || '') : ''
+    const log = new Transaction({
+      type: 'contributorAction',
+      adminId: adminUser._id,
+      adminDecision: isSuspending ? 'suspend' : 'activate',
+      contributorUsername: username,
+      reason: isSuspending ? (reason || 'No reason provided') : ''
     });
     await log.save();
 
@@ -1046,6 +1067,7 @@ app.post('/api/admin/contributor/suspend', isAdmin, async (req, res) => {
     res.status(500).json({ error: 'Failed to update contributor status' });
   }
 });
+
 app.get('/api/admin/actions', isAdmin, async (req, res) => {
   try {
     const actions = await AdminAction.find().sort({ timestamp: -1 });
@@ -1071,9 +1093,325 @@ app.post('/api/admin/contributor/reason', isAdmin, async (req, res) => {
     res.status(500).json({ error: 'Failed to update reason' });
   }
 });
+// MANAGE RESOURCES 
+app.get('/api/admin/pending-resources', isAdmin, async (req, res) => {
+  try {
+    console.log('📋 Fetching pending resources for admin review...');
+
+    const pendingResources = await Resource.find({ status: 'pending' })
+      .sort({ uploadDate: -1 })
+      .lean(); // No need to populate, since uploadedBy is a string
+
+    console.log(`📋 Found ${pendingResources.length} pending resources`);
+
+    const enrichedResources = await Promise.all(
+      pendingResources.map(async (resource) => {
+        const existingResources = await Resource.find({
+          course: resource.course,
+          semester: resource.semester,
+          subject: resource.subject,
+          type: resource.type,
+          status: 'approved',
+          _id: { $ne: resource._id }
+        }).lean();
+
+        return {
+          ...resource,
+          uploadedBy: {
+            name: resource.uploadedBy || 'Unknown',
+            username: resource.uploadedBy || 'unknown'
+          },
+          uploadedAt: resource.uploadDate || resource.createdAt || null,
+          existingResources: existingResources.map(existing => ({
+            ...existing,
+            uploadedBy: {
+              name: existing.uploadedBy || 'Unknown',
+              username: existing.uploadedBy || 'unknown'
+            },
+            uploadedAt: existing.uploadDate || existing.createdAt || null
+          }))
+        };
+      })
+    );
+
+    res.json(enrichedResources);
+  } catch (error) {
+    console.error('❌ Error fetching pending resources:', error);
+    res.status(500).json({ error: 'Failed to fetch pending resources' });
+  }
+});
 
 
 
+// Approve a resource
+app.post('/api/admin/approve-resource/:resourceId', isAdmin, async (req, res) => {
+  try {
+    const { resourceId } = req.params;
+    const { replaceResourceId } = req.body; // Optional: ID of resource to replace
+    
+    console.log(`✅ Admin ${req.adminUser.username} approving resource ${resourceId}`);
+    
+    // Find the resource
+    const resource = await Resource.findById(resourceId);
+    if (!resource) {
+      return res.status(404).json({ error: 'Resource not found' });
+    }
+    
+    // If replacing an existing resource
+    if (replaceResourceId) {
+      const oldResource = await Resource.findById(replaceResourceId);
+      if (oldResource) {
+        // Create transaction record for replacement
+        try {
+  await Transaction.create({
+    type: 'docExtendOrReplace',
+    oldDocument: {
+      fileHash: oldResource.fileHash || 'legacy',
+      filename: oldResource.filename,
+      contributor: oldResource.uploadedBy,
+      relevanceScore: oldResource.relevanceScore || 0,
+      syllabusTopics: oldResource.syllabusTopics || [],
+      resourceId: oldResource._id
+    },
+    newDocument: {
+      fileHash: resource.fileHash || 'legacy',
+      filename: resource.filename,
+      contributor: resource.uploadedBy,
+      relevanceScore: resource.relevanceScore || 0,
+      syllabusTopics: resource.syllabusTopics || [],
+      unit: resource.unit ? resource.unit.join(', ') : '',
+      course: resource.course,
+      semester: resource.semester,
+      resourceId: resource._id
+    },
+    adminId: req.adminUser._id,
+    adminDecision: 'replace',
+    resourceId: resource._id,
+    filename: resource.filename,
+    course: resource.course,
+    semester: resource.semester,
+    subject: resource.subject,
+    resourceType: resource.type
+  });
+} catch (err) {
+  console.error('❌ Failed to record docExtendOrReplace transaction:', err);
+}
+
+        // Remove old resource
+        await Resource.findByIdAndDelete(replaceResourceId);
+        
+        // Delete file from GridFS
+        if (oldResource.fileId) {
+          try {
+            await gridfsBucket.delete(oldResource.fileId);
+          } catch (error) {
+            console.warn('Failed to delete old file from GridFS:', error);
+          }
+        }
+        
+        console.log(`🔄 Resource ${replaceResourceId} replaced with ${resourceId}`);
+      }
+    }
+    
+    // Approve the resource
+    await Resource.findByIdAndUpdate(resourceId, { status: 'approved' });
+    
+    // Create transaction record for approval
+    await Transaction.create({
+      type: 'approval',
+      adminId: req.adminUser._id,
+      adminDecision: 'approve',
+      resourceId: resource._id,
+      filename: resource.filename,
+      course: resource.course,
+      semester: resource.semester,
+      subject: resource.subject,
+      resourceType: resource.type
+    });
+    
+    // Update user's upload count if not already counted
+    const user = await User.findOne({ username: resource.uploadedBy });
+    if (user) {
+      await User.findByIdAndUpdate(user._id, { $inc: { uploadCount: 0.5 } }); // Add 0.5 more to make it 1 total
+    }
+    
+    res.json({ 
+      success: true, 
+      message: replaceResourceId ? 'Resource approved and replaced existing resource' : 'Resource approved successfully'
+    });
+    
+  } catch (error) {
+    console.error('❌ Error approving resource:', error);
+    res.status(500).json({ error: 'Failed to approve resource' });
+  }
+});
+
+// Reject a resource
+app.post('/api/admin/reject-resource/:resourceId', isAdmin, async (req, res) => {
+  try {
+    const { resourceId } = req.params;
+    const { reason } = req.body;
+    
+    console.log(`❌ Admin ${req.adminUser.username} rejecting resource ${resourceId}`);
+    
+    const resource = await Resource.findById(resourceId);
+    if (!resource) {
+      return res.status(404).json({ error: 'Resource not found' });
+    }
+    
+    // Update resource status
+    await Resource.findByIdAndUpdate(resourceId, { 
+      status: 'rejected',
+      rejectionReason: reason || 'No reason provided'
+    });
+    
+    // Create transaction record
+    await Transaction.create({
+      type: 'rejection',
+      adminId: req.adminUser._id,
+      adminDecision: 'reject',
+      resourceId: resource._id,
+      filename: resource.filename,
+      course: resource.course,
+      semester: resource.semester,
+      subject: resource.subject,
+      resourceType: resource.type,
+      reason: reason || 'No reason provided'
+    });
+    
+    // Delete file from GridFS
+    if (resource.fileId) {
+      try {
+        await gridfsBucket.delete(resource.fileId);
+        console.log(`🗑️ File ${resource.fileId} deleted from GridFS`);
+      } catch (error) {
+        console.warn('Failed to delete file from GridFS:', error);
+      }
+    }
+    
+    res.json({ success: true, message: 'Resource rejected successfully' });
+    
+  } catch (error) {
+    console.error('❌ Error rejecting resource:', error);
+    res.status(500).json({ error: 'Failed to reject resource' });
+  }
+});
+
+// Remove an approved resource
+app.delete('/api/admin/remove-resource/:resourceId', isAdmin, async (req, res) => {
+  try {
+    const { resourceId } = req.params;
+    const { reason } = req.body;
+    
+    console.log(`🗑️ Admin ${req.adminUser.username} removing resource ${resourceId}`);
+    
+    const resource = await Resource.findById(resourceId);
+    if (!resource) {
+      return res.status(404).json({ error: 'Resource not found' });
+    }
+    
+    // Create transaction record
+    await Transaction.create({
+      type: 'resourceRemoval',
+      adminId: req.adminUser._id,
+      adminDecision: 'remove',
+      resourceId: resource._id,
+      docFileHash: resource.fileHash || 'legacy',
+      filename: resource.filename,
+      contributor: resource.uploadedBy,
+      reason: reason || 'No reason provided',
+      course: resource.course,
+      semester: resource.semester,
+      subject: resource.subject,
+      resourceType: resource.type
+    });
+    
+    // Delete file from GridFS
+    if (resource.fileId) {
+      try {
+        await gridfsBucket.delete(resource.fileId);
+        console.log(`🗑️ File ${resource.fileId} deleted from GridFS`);
+      } catch (error) {
+        console.warn('Failed to delete file from GridFS:', error);
+      }
+    }
+    
+    // Remove resource from database
+    await Resource.findByIdAndDelete(resourceId);
+    
+    // Decrease user's upload count
+    const user = await User.findOne({ username: resource.uploadedBy });
+    if (user && user.uploadCount > 0) {
+      await User.findByIdAndUpdate(user._id, { $inc: { uploadCount: -1 } });
+    }
+    
+    res.json({ success: true, message: 'Resource removed successfully' });
+    
+  } catch (error) {
+    console.error('❌ Error removing resource:', error);
+    res.status(500).json({ error: 'Failed to remove resource' });
+  }
+});
+
+// Get admin transaction history
+app.get('/api/admin/transactions', isAdmin, async (req, res) => {
+  try {
+    const { page = 1, limit = 20, type } = req.query;
+    
+    const query = {};
+    if (type) query.type = type;
+    
+    const transactions = await Transaction.find(query)
+      .populate('adminId', 'name username')
+      .sort({ timestamp: -1 })
+      .limit(limit * 1)
+      .skip((page - 1) * limit)
+      .lean();
+    
+    const total = await Transaction.countDocuments(query);
+    
+    res.json({
+      transactions,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total,
+        pages: Math.ceil(total / limit)
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ Error fetching transactions:', error);
+    res.status(500).json({ error: 'Failed to fetch transactions' });
+  }
+});
+
+// Get admin dashboard stats
+app.get('/api/admin/stats', isAdmin, async (req, res) => {
+  try {
+    const stats = await Promise.all([
+      Resource.countDocuments({ status: 'pending' }),
+      Resource.countDocuments({ status: 'approved' }),
+      Resource.countDocuments({ status: 'rejected' }),
+      User.countDocuments({}),
+      Transaction.countDocuments({ type: 'approval' }),
+      Transaction.countDocuments({ type: 'rejection' })
+    ]);
+    
+    res.json({
+      pendingResources: stats[0],
+      approvedResources: stats[1],
+      rejectedResources: stats[2],
+      totalUsers: stats[3],
+      totalApprovals: stats[4],
+      totalRejections: stats[5]
+    });
+    
+  } catch (error) {
+    console.error('❌ Error fetching admin stats:', error);
+    res.status(500).json({ error: 'Failed to fetch stats' });
+  }
+}); 
 
 
 
