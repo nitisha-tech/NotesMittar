@@ -1,6 +1,7 @@
 
+
 import React, { useEffect, useState } from 'react';
-import '../style/admin.css';
+import '../style/Admin.css';
 import axios from 'axios';
 
 function ManageContributor() {
