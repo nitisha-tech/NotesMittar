@@ -56,6 +56,10 @@ const userSchema = new mongoose.Schema({
     enum: ['active', 'suspended'],
     default: 'active'
   },
+  suspensionReason: {
+  type: String,
+  default: ''
+},
  
 
   
