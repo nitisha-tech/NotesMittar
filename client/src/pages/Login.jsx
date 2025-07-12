@@ -29,6 +29,11 @@ function Login() {
     const data = await res.json();
 
     if (res.ok) {
+      if(data.user.status === 'suspended'){
+          alert('Your account has been suspended. Please contact support.');
+          sessionStorage.clear(); // Clear any partial login info
+          return;
+       }
       alert('Login successful!');
       sessionStorage.setItem('loggedIn', 'true');
       // ✅ Save individual fields for easier access
