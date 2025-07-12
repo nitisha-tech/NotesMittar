@@ -188,6 +188,10 @@ app.post('/api/login', async (req, res) => {
     if (!isMatch) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
+    // new part added
+    if(user.status === 'suspended'){
+      return res.status(403).json({error: 'Your Account has been suspended'});
+    }
 
     res.status(200).json({
       message: 'Login successful',
