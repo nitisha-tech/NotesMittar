@@ -188,7 +188,6 @@ app.post('/api/login', async (req, res) => {
     if (!isMatch) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
-    // new part added
     if(user.status === 'suspended'){
       return res.status(403).json({error: 'Your Account has been suspended'});
     }
@@ -391,80 +390,56 @@ app.post('/api/change-password', async (req, res) => {
 
 
 // Upload Route with proper error handling
+// Upload Route with proper error handling
+require('dotenv').config();
+const fs = require('fs');
+const crypto = require('crypto');
+
+const router = express.Router();
+
 app.post('/api/upload', (req, res) => {
-  // Use multer middleware with error handling
   upload.single('pdf')(req, res, async (err) => {
-    // Handle multer errors
     if (err) {
       console.error('Multer error:', err);
-
       if (err instanceof multer.MulterError) {
         switch (err.code) {
           case 'LIMIT_FILE_SIZE':
-            return res.status(400).json({
-              error: 'File too large! Please choose a file smaller than 10MB.'
-            });
-
+            return res.status(400).json({ error: 'File too large! Please choose a file smaller than 10MB.' });
           default:
-            return res.status(400).json({
-              error: 'File upload error: ' + err.message
-            });
+            return res.status(400).json({ error: 'File upload error: ' + err.message });
         }
       } else {
-        // Custom errors (like file type validation)
-        return res.status(400).json({
-          error: err.message
-        });
+        return res.status(400).json({ error: err.message });
       }
     }
 
-    // Continue with the upload process
-    console.log('Upload request received');
-    console.log('Headers:', req.headers);
-    console.log('Body:', req.body);
-    console.log('File:', req.file ? req.file.originalname : 'No file');
-
     try {
-      if (!req.file) {
-        return res.status(400).json({ error: 'No file uploaded' });
-      }
+      if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+      if (!isGridFSReady) return res.status(503).json({ error: 'GridFS not ready. Please try again later.' });
 
-      if (!isGridFSReady) {
-        return res.status(503).json({ error: 'GridFS not ready. Please try again in a moment.' });
-      }
-
-      // Extract user info from headers
       const uploadedBy = req.headers.username || 'unknown';
       const email = req.headers.email || 'unknown@example.com';
 
-      // Validate that user exists first
       const existingUser = await User.findOne({
-        $or: [
-          { username: uploadedBy },
-          { email: email }
-        ]
+        $or: [{ username: uploadedBy }, { email: email }]
       });
 
-      if (!existingUser) {
-        return res.status(400).json({
-          error: 'User not found. Please login again.'
-        });
-      }
+      if (!existingUser) return res.status(400).json({ error: 'User not found. Please login again.' });
 
       const { course, semester, subject, type, year } = req.body;
       let { unit } = req.body;
 
-      // 🚫 Reject if PYQ for the same year already exists
-      if (type.toLowerCase() === 'pyqs' && year) {
-        const duplicatePYQ = await Resource.findOne({
-          type: 'PYQs',
-          year,
-          course,
-          semester,
-          subject
-        });
+      if (unit) {
+        if (typeof unit === 'string') unit = [unit];
+        else if (!Array.isArray(unit)) unit = [];
+      } else {
+        unit = [];
+      }
 
-        if (duplicatePYQ) {
+      // PYQ duplicate prevention
+      if (type.toLowerCase() === 'pyqs' && year) {
+        const duplicate = await Resource.findOne({ type: 'PYQs', year, course, semester, subject });
+        if (duplicate) {
           return res.status(409).json({
             error: `❌ A PYQ for year ${year} already exists for this subject.`,
             conflict: true
@@ -472,101 +447,273 @@ app.post('/api/upload', (req, res) => {
         }
       }
 
-      // Handle unit array properly
-      if (unit) {
-        if (typeof unit === 'string') {
-          unit = [unit];
-        } else if (Array.isArray(unit)) {
-          // unit is already an array, keep it as is
-        } else {
-          unit = [];
-        }
+      console.log('📥 Uploading:', { course, semester, subject, type, uploadedBy });
+
+      // ===========================
+      // FILE HASH DUPLICATE CHECK
+      // ===========================
+      let fileBuffer;
+      
+      // Handle both disk storage and memory storage
+      if (req.file.path) {
+        // Disk storage - read from file path
+        fileBuffer = fs.readFileSync(req.file.path);
+      } else if (req.file.buffer) {
+        // Memory storage - use buffer directly
+        fileBuffer = req.file.buffer;
       } else {
-        unit = [];
+        return res.status(400).json({ error: 'File data not accessible' });
       }
 
-      console.log('Processing upload for:', {
-        course,
-        semester,
-        subject,
-        type,
-        uploadedBy: existingUser.username
-      });
+      const fileHash = crypto.createHash('sha256').update(fileBuffer).digest('hex');
 
-      // Create filename
+      const existing = await Resource.findOne({ fileHash, status: 'approved' });
+      if (existing) {
+        return res.status(409).json({
+          error: '❌ This file already exists and has been approved. Duplicate upload rejected.',
+          status: 'rejected',
+          relevanceScore: 100,
+          reason: 'Duplicate of already approved file'
+        });
+      }
+
+      // =================== AI RELEVANCE CHECK (FOR ALL TYPES) ===================
+      let relevanceScore = null;
+      let status = '';
+
+      try {
+        console.log('🤖 Starting AI relevance check...');
+        const { text: fileText } = await pdfParse(fileBuffer);
+        console.log('📄 PDF text extracted, length:', fileText.length);
+
+        // Get syllabus data
+        const syllabus = await Syllabus.findOne({
+          course: course.trim(),
+          semester: semester.trim(),
+          subject: subject.trim()
+        });
+
+        if (!syllabus || !syllabus.units || syllabus.units.length === 0) {
+          console.log('❌ No syllabus found for:', { course, semester, subject });
+          return res.status(400).json({ error: 'No syllabus data found for this course/subject combination.' });
+        }
+
+        let topics = [];
+        let contextDescription = '';
+
+        if (type.toLowerCase() === 'notes' && unit && unit.length > 0) {
+          // For notes, check specific unit
+          const formattedUnit = (() => {
+            const match = unit[0]?.match(/\d+/);
+            return match ? `UNIT ${match[0]}` : unit[0]?.toUpperCase() || '';
+          })();
+
+          const unitData = syllabus.units.find(u => {
+            const a = u.unitName.trim().toUpperCase();
+            const b = formattedUnit.toUpperCase();
+            return a === b || a.includes(b) || b.includes(a);
+          });
+
+          if (!unitData || !unitData.topics?.length) {
+            return res.status(400).json({ error: `Unit "${formattedUnit}" has no topics in syllabus.` });
+          }
+
+          topics = unitData.topics.map(t => t.trim());
+          contextDescription = `Unit: ${formattedUnit}`;
+        } else {
+          // For PYQs or other types, use all syllabus topics
+          topics = syllabus.units.flatMap(unit => 
+            (unit.topics || []).map(topic => topic.trim())
+          ).filter(topic => topic.length > 0);
+          contextDescription = 'All Units (Complete Syllabus)';
+        }
+
+        if (topics.length === 0) {
+          return res.status(400).json({ error: 'No topics found in syllabus data.' });
+        }
+
+        console.log('📚 Topics to check against:', topics.length);
+        console.log('📝 Context:', contextDescription);
+
+        const prompt = `
+You are an AI evaluating how well uploaded content matches syllabus topics.
+
+Subject: ${subject}
+Content Type: ${type}
+${contextDescription}
+
+Syllabus Topics:
+${topics.map((t, i) => `${i + 1}. ${t}`).join('\n')}
+
+Content to Evaluate:
+${fileText.slice(0, 4000)}
+
+Instructions:
+1. Count how many topics are covered/mentioned in the content
+2. Assess the quality and depth of coverage (0.5 to 1.0)
+3. Respond ONLY with valid JSON in this exact format:
+
+{"matched": X, "total": ${topics.length}, "qualityFactor": 0.XX}
+
+Where:
+- matched = number of topics found in content
+- total = ${topics.length} (total syllabus topics)
+- qualityFactor = quality score between 0.5 and 1.0
+`;
+
+        console.log('🚀 Sending request to Gemini API...');
+
+        const geminiRes = await axios.post(
+          `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
+          {
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: {
+              temperature: 0.1,
+              maxOutputTokens: 150
+            }
+          }
+        );
+
+        const responseText = geminiRes.data.candidates[0]?.content?.parts[0]?.text || '';
+        console.log('🔄 Gemini Raw Response:', responseText);
+
+        if (!responseText) {
+          throw new Error('Empty response from Gemini API');
+        }
+
+        // Enhanced JSON parsing
+        let parsed = null;
+        try {
+          // First try direct JSON parse
+          parsed = JSON.parse(responseText.trim());
+        } catch (err) {
+          console.log('⚠️ Direct JSON parse failed, trying extraction...');
+          // Try to extract JSON from response
+          const jsonMatch = responseText.match(/\{[^{}]*"matched"[^{}]*\}/);
+          if (jsonMatch) {
+            try {
+              parsed = JSON.parse(jsonMatch[0]);
+            } catch (e) {
+              console.log('❌ JSON extraction also failed');
+            }
+          }
+        }
+
+        console.log('🔍 Parsed result:', parsed);
+
+        if (parsed && 
+            typeof parsed.matched === 'number' && 
+            typeof parsed.total === 'number' && 
+            typeof parsed.qualityFactor === 'number' &&
+            parsed.matched >= 0 && 
+            parsed.total > 0 && 
+            parsed.qualityFactor > 0 && 
+            parsed.qualityFactor <= 1) {
+          
+          const rawScore = (parsed.matched / parsed.total) * parsed.qualityFactor;
+          relevanceScore = Math.round(Math.max(0, Math.min(rawScore * 100, 100)));
+          
+          console.log(`✅ AI Analysis Complete:`);
+          console.log(`   - Topics Matched: ${parsed.matched}/${parsed.total}`);
+          console.log(`   - Quality Factor: ${parsed.qualityFactor}`);
+          console.log(`   - Final Relevance Score: ${relevanceScore}%`);
+
+        } else {
+          throw new Error('Invalid or incomplete AI response structure');
+        }
+
+      } catch (aiError) {
+        console.error('❌ AI relevance check failed:', aiError.message);
+        console.error('Full error:', aiError?.response?.data || aiError);
+        return res.status(500).json({ 
+          error: 'AI content analysis failed. Please try again or contact support.',
+          details: aiError.message
+        });
+      }
+
+      // ===========================
+      // CONTINUE GridFS Upload
+      // ===========================
       const timestamp = Date.now();
       const unitStr = unit.length > 0 ? unit.join('_') : 'general';
       const filename = `${course}_${semester}_${subject}_${type}_${unitStr}_${timestamp}${path.extname(req.file.originalname)}`;
 
-      console.log('Generated filename:', filename);
-
-      // Upload to GridFS
-      const gridFSFile = await uploadToGridFS(req.file.buffer, filename, {
+      // Use the fileBuffer we already have for GridFS upload
+      const gridFSFile = await uploadToGridFS(fileBuffer, filename, {
         originalName: req.file.originalname,
-        subject: subject,
-        semester: semester,
-        course: course,
-        type: type,
-        unit: unit,
+        subject,
+        semester,
+        course,
+        type,
+        unit,
         uploadedBy: existingUser.username,
         uploadDate: new Date()
       });
 
-      console.log('GridFS upload successful:', gridFSFile._id);
+      console.log('✅ GridFS upload successful:', gridFSFile._id);
 
-      // Check existing approved resources for this combination
-      const existing = await Resource.countDocuments({
-        course,
-        semester,
-        subject,
-        type,
-        status: 'approved'
-      });
+      // STATUS DETERMINATION BASED ON RELEVANCE SCORE
+      if (type.toLowerCase() !== 'notes') {
+        const existing = await Resource.countDocuments({
+          course,
+          semester,
+          subject,
+          type,
+          status: 'approved'
+        });
+        status = existing >= 2 ? 'pending' : 'approved';
+      } else {
+        if (relevanceScore >= 80) {
+          const existing = await Resource.countDocuments({
+            course,
+            semester,
+            subject,
+            type,
+            status: 'approved'
+          });
+          status = existing >= 2 ? 'rejected' : 'approved';
+        } else {
+          status = 'rejected';
+        }
+      }
 
-      const status = existing < 2 ? 'approved' : 'pending';
-      console.log(`Existing approved resources: ${existing}, Status: ${status}`);
+      console.log(`📊 Final Status Decision: ${status} (Score: ${relevanceScore}%)`);
 
-      // Create resource record
       const resource = await Resource.create({
-        filename: filename,
+        filename,
         fileId: gridFSFile._id,
         course,
         semester,
         subject,
         type,
         year: year || null,
-        unit: unit,
+        unit,
         status,
         uploadedBy: existingUser.username,
-        uploadDate: new Date()
+        uploadDate: new Date(),
+        relevanceScore,
+        fileHash
       });
 
-      console.log('Resource record created:', resource._id);
-
-      // Update user score - FIXED: Update the existing user by their _id
       const scoreIncrement = status === 'approved' ? 1 : 0.5;
 
       await User.findByIdAndUpdate(
         existingUser._id,
-        {
-          $inc: { uploadCount: scoreIncrement }
-        },
+        { $inc: { uploadCount: scoreIncrement } },
         { new: true }
       );
 
-      console.log(`✅ Upload completed: ${filename}, Status: ${status}`);
-      console.log(`✅ Updated uploadCount for user: ${existingUser.username}`);
-
-      res.status(201).json({
+      return res.status(201).json({
         message: `Upload ${status}! Your contribution has been ${status === 'approved' ? 'accepted' : 'submitted for review'}.`,
         status,
-        filename: filename,
-        fileId: gridFSFile._id
+        filename,
+        fileId: gridFSFile._id,
+        relevanceScore
       });
 
     } catch (error) {
-      console.error('Upload error:', error);
-      res.status(500).json({ error: 'Upload failed: ' + error.message });
+      console.error('❌ Upload error:', error);
+      return res.status(500).json({ error: 'Upload failed: ' + error.message });
     }
   });
 });
@@ -595,8 +742,94 @@ app.get('/api/my-resources', async (req, res) => {
       year: doc.year,
       status: doc.status,
       uploadDate: doc.uploadDate,
-      fileId: doc.fileId
+      fileId: doc.fileId,
+      relevanceScore: typeof doc.relevanceScore === 'number' ? doc.relevanceScore : null
     }));
+    
+    console.log('📤 Sending resources to frontend:', enriched.map(r => ({
+      filename: r.filename,
+      score: r.relevanceScore,
+      status: r.status
+    })));
+
+    res.json(enriched);
+  } catch (error) {
+    console.error('Fetch error:', error);
+    res.status(500).json({ error: 'Could not fetch resources' });
+  }
+});
+
+// Fetch Contribution History Route
+app.get('/api/my-resources', async (req, res) => {
+  const username = req.headers.username;
+
+  console.log('Fetching resources for user:', username);
+
+  if (!username) {
+    return res.status(400).json({ error: 'Username required in headers' });
+  }
+
+  try {
+    const resources = await Resource.find({ uploadedBy: username }).sort({ uploadDate: -1 });
+    console.log(`Found ${resources.length} resources for user ${username}`);
+
+    const enriched = resources.map(doc => ({
+      filename: doc.filename,
+      course: doc.course,
+      semester: doc.semester,
+      subject: doc.subject,
+      type: doc.type,
+      unit: doc.unit,
+      year: doc.year,
+      status: doc.status,
+      uploadDate: doc.uploadDate,
+      fileId: doc.fileId,
+      relevanceScore: typeof doc.relevanceScore === 'number' ? doc.relevanceScore : null
+    }));
+    console.log('📤 Sending resources to frontend:', enriched.map(r => ({
+      filename: r.filename,
+      score: r.relevanceScore,
+      status: r.status
+    })));
+
+    res.json(enriched);
+  } catch (error) {
+    console.error('Fetch error:', error);
+    res.status(500).json({ error: 'Could not fetch resources' });
+  }
+});
+// Fetch Contribution History Route
+app.get('/api/my-resources', async (req, res) => {
+  const username = req.headers.username;
+
+  console.log('Fetching resources for user:', username);
+
+  if (!username) {
+    return res.status(400).json({ error: 'Username required in headers' });
+  }
+
+  try {
+    const resources = await Resource.find({ uploadedBy: username }).sort({ uploadDate: -1 });
+    console.log(`Found ${resources.length} resources for user ${username}`);
+
+    const enriched = resources.map(doc => ({
+      filename: doc.filename,
+      course: doc.course,
+      semester: doc.semester,
+      subject: doc.subject,
+      type: doc.type,
+      unit: doc.unit,
+      year: doc.year,
+      status: doc.status,
+      uploadDate: doc.uploadDate,
+      fileId: doc.fileId,
+      relevanceScore: typeof doc.relevanceScore === 'number' ? doc.relevanceScore : null
+    }));
+    console.log('📤 Sending resources to frontend:', enriched.map(r => ({
+      filename: r.filename,
+      score: r.relevanceScore,
+      status: r.status
+    })));
 
     res.json(enriched);
   } catch (error) {
@@ -1416,7 +1649,69 @@ app.get('/api/admin/stats', isAdmin, async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch stats' });
   }
 }); 
+// GEMINI API 
+ // ✅ Add this at the top of server.js if not already present
+require('dotenv').config();
+const axios = require('axios');
+const pdfParse = require('pdf-parse');
+const Syllabus = require('./models/Syllabus');
 
+// ✅ Adjust path as needed (if you're in server.js)
+
+// ✅ Helper function to fetch topics
+async function getTopicsFromDB(course, semester, subject, unitName) {
+  const syllabus = await Syllabus.findOne({ course, semester, subject });
+  if (!syllabus) return [];
+  const unit = syllabus.units.find(u => u.unitName === unitName);
+  return unit ? unit.topics : [];
+}
+
+// ✅ Add Gemini relevance API route
+app.post('/api/ai/relevance', async (req, res) => {
+  const { fileText, course, semester, subject, unit } = req.body;
+
+  const topics = await getTopicsFromDB(course, semester, subject, unit);
+
+  const prompt = `
+You are an AI expert that evaluates the *quality and relevance* of a student's academic notes compared to the official syllabus.
+
+Syllabus for ${subject} - ${unit}:
+${topics.map((t, i) => `${i + 1}. ${t}`).join('\n')}
+
+Uploaded Notes Content:
+""" 
+${fileText}
+"""
+
+Check the following:
+- How many syllabus topics are clearly explained in the notes?
+- Are they meaningful or just keyword mentions?
+- Are irrelevant topics or incorrect concepts included?
+
+Now return this result as JSON ONLY like:
+{"matched": X, "total": Y, "qualityFactor": 0.85}
+`;
+
+  try {
+    const geminiRes = await axios.post(
+      `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
+      {
+        contents: [{ parts: [{ text: prompt }] }]
+      }
+    );
+
+
+    const raw = geminiRes.data.candidates[0]?.content?.parts[0]?.text || '{}';
+    const parsed = JSON.parse(raw);
+    const rawScore = (parsed.matched / parsed.total) * parsed.qualityFactor;
+    const relevanceScore = Math.round(rawScore * 100);
+
+    return res.json({ relevanceScore });
+  } catch (err) {
+    console.error('Gemini AI error:', err.message);
+    return res.status(500).json({ error: 'AI relevance check failed' });
+  }
+});
 
 
 
