@@ -1,8 +1,3 @@
-
-//ContactUS portion starting at line 265
-// server.js
-// server.js
-// CHANGES -> PROFILE(starts from line 209) and Contact US(line 591)
 const express = require('express');
 const mongoose = require('mongoose');
 const bodyParser = require('body-parser');
@@ -498,12 +493,13 @@ app.post('/api/upload', (req, res) => {
           return res.status(400).json({ error: 'No syllabus data found for this course/subject combination.' });
         }
 
-        let topics = [];
+        let topics = []; // array of { name, subtopics }
         let contextDescription = '';
+        let formattedUnit = '';
 
-        if (type.toLowerCase() === 'notes' && unit && unit.length > 0) {
-          // For notes, check specific unit
-          const formattedUnit = (() => {
+       if (type.toLowerCase() === 'notes' && unit && unit.length > 0) {
+       // Extract UNIT format (e.g. "UNIT 1")
+          formattedUnit = (() => {
             const match = unit[0]?.match(/\d+/);
             return match ? `UNIT ${match[0]}` : unit[0]?.toUpperCase() || '';
           })();
@@ -518,58 +514,67 @@ app.post('/api/upload', (req, res) => {
             return res.status(400).json({ error: `Unit "${formattedUnit}" has no topics in syllabus.` });
           }
 
-          topics = unitData.topics.map(t => t.trim());
+         // Structured topics with subtopics
+          topics = unitData.topics.filter(t => t.name && Array.isArray(t.subtopics));
+
           contextDescription = `Unit: ${formattedUnit}`;
         } else {
-          // For PYQs or other types, use all syllabus topics
-          topics = syllabus.units.flatMap(unit => 
-            (unit.topics || []).map(topic => topic.trim())
-          ).filter(topic => topic.length > 0);
+        // For other types, flatten all topics
+          topics = syllabus.units.flatMap(unit =>
+            (unit.topics || []).filter(t => t.name && Array.isArray(t.subtopics))
+          );
+
           contextDescription = 'All Units (Complete Syllabus)';
         }
 
         if (topics.length === 0) {
-          return res.status(400).json({ error: 'No topics found in syllabus data.' });
+          return res.status(400).json({ error: 'No topics with subtopics found in syllabus data.' });
         }
 
-        console.log('📚 Topics to check against:', topics.length);
+        console.log('📚 Topics to check:', topics.length);
         console.log('📝 Context:', contextDescription);
 
         const prompt = `
-You are an AI evaluating how well uploaded content matches syllabus topics.
+You are an AI evaluating how well uploaded educational content matches syllabus-defined topics and subtopics.
 
 Subject: ${subject}
 Content Type: ${type}
 ${contextDescription}
 
-Syllabus Topics:
-${topics.map((t, i) => `${i + 1}. ${t}`).join('\n')}
+Below are the syllabus topics with their required subtopics:
+${topics.map((t, i) => `${i + 1}. ${t.name}\n   Subtopics:\n   - ${t.subtopics.join('\n   - ')}`).join('\n\n')}
 
-Content to Evaluate:
+Uploaded Content (first 4000 chars only):
 ${fileText.slice(0, 4000)}
 
 Instructions:
-1. Count how many topics are covered/mentioned in the content
-2. Assess the quality and depth of coverage (0.5 to 1.0)
-3. Respond ONLY with valid JSON in this exact format:
+1. For each topic, count how many of its subtopics are mentioned or well covered in the content.
+2. Respond strictly in this format:
 
-{"matched": X, "total": ${topics.length}, "qualityFactor": 0.XX}
-
-Where:
-- matched = number of topics found in content
-- total = ${topics.length} (total syllabus topics)
-- qualityFactor = quality score between 0.5 and 1.0
+{
+  "results": [
+    {
+      "topic": "Topic Name 1",
+      "matched": 3,
+      "total": 5
+    },
+    {
+      "topic": "Topic Name 2",
+      "matched": 2,
+      "total": 4
+    }
+  ]
+}
 `;
 
         console.log('🚀 Sending request to Gemini API...');
-
         const geminiRes = await axios.post(
           `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
           {
             contents: [{ parts: [{ text: prompt }] }],
             generationConfig: {
               temperature: 0.1,
-              maxOutputTokens: 150
+              maxOutputTokens: 300
             }
           }
         );
@@ -580,19 +585,18 @@ Where:
         if (!responseText) {
           throw new Error('Empty response from Gemini API');
         }
+        console.log('👀 Raw AI response:', responseText);
 
-        // Enhanced JSON parsing
         let parsed = null;
         try {
-          // First try direct JSON parse
           parsed = JSON.parse(responseText.trim());
         } catch (err) {
           console.log('⚠️ Direct JSON parse failed, trying extraction...');
-          // Try to extract JSON from response
-          const jsonMatch = responseText.match(/\{[^{}]*"matched"[^{}]*\}/);
+          const jsonMatch = responseText.match(/```(?:json)?\s*({[\s\S]+?})\s*```/);
+
           if (jsonMatch) {
             try {
-              parsed = JSON.parse(jsonMatch[0]);
+              parsed = JSON.parse(jsonMatch[1]);
             } catch (e) {
               console.log('❌ JSON extraction also failed');
             }
@@ -601,23 +605,34 @@ Where:
 
         console.log('🔍 Parsed result:', parsed);
 
-        if (parsed && 
-            typeof parsed.matched === 'number' && 
-            typeof parsed.total === 'number' && 
-            typeof parsed.qualityFactor === 'number' &&
-            parsed.matched >= 0 && 
-            parsed.total > 0 && 
-            parsed.qualityFactor > 0 && 
-            parsed.qualityFactor <= 1) {
-          
-          const rawScore = (parsed.matched / parsed.total) * parsed.qualityFactor;
-          relevanceScore = Math.round(Math.max(0, Math.min(rawScore * 100, 100)));
-          
-          console.log(`✅ AI Analysis Complete:`);
-          console.log(`   - Topics Matched: ${parsed.matched}/${parsed.total}`);
-          console.log(`   - Quality Factor: ${parsed.qualityFactor}`);
-          console.log(`   - Final Relevance Score: ${relevanceScore}%`);
+        if (
+          parsed &&
+          Array.isArray(parsed.results) &&
+          parsed.results.every(r =>
+            typeof r.matched === 'number' &&
+            typeof r.total === 'number' &&
+            r.matched >= 0 &&
+            r.total > 0
+          )
+        ) {
+          const results = parsed.results;
+          const totalTopicsInUnit = topics.length;
+          let relevanceSum = 0;
 
+          results.forEach(r => {
+            const topicMatchWeight = 1 / totalTopicsInUnit; // Contribution of each topic
+            const subtopicMatchRatio = r.matched / r.total; // Ratio of subtopics matched in that topic
+            relevanceSum += topicMatchWeight * subtopicMatchRatio;
+          });
+
+          relevanceScore = Math.round(Math.max(0, Math.min(relevanceSum * 100, 100)));
+
+
+          console.log(`✅ AI Analysis Complete:`);
+          results.forEach((r, i) => {
+            console.log(`   ${i + 1}. ${r.topic} - Matched ${r.matched}/${r.total}`);
+          });
+          console.log(`   - Final Relevance Score: ${relevanceScore}%`);
         } else {
           throw new Error('Invalid or incomplete AI response structure');
         }
@@ -625,7 +640,7 @@ Where:
       } catch (aiError) {
         console.error('❌ AI relevance check failed:', aiError.message);
         console.error('Full error:', aiError?.response?.data || aiError);
-        return res.status(500).json({ 
+        return res.status(500).json({
           error: 'AI content analysis failed. Please try again or contact support.',
           details: aiError.message
         });
@@ -1589,8 +1604,67 @@ app.delete('/api/admin/remove-resource/:resourceId', isAdmin, async (req, res) =
     res.status(500).json({ error: 'Failed to remove resource' });
   }
 });
+app.delete('/api/admin/remove-resource/:resourceId', isAdmin, async (req, res) => {
+  try {
+    const { resourceId } = req.params;
+    const { reason } = req.body;
 
-// Get admin transaction history
+    console.log(`🗑️ Admin ${req.adminUser.username} removing resource ${resourceId}`);
+
+    const resource = await Resource.findById(resourceId);
+    if (!resource) {
+      return res.status(404).json({ error: 'Resource not found' });
+    }
+
+    // 🔁 Log transaction
+    await Transaction.create({
+      type: 'resourceRemoval',
+      adminId: req.adminUser._id,
+      adminDecision: 'remove',
+      resourceId: resource._id,
+      docFileHash: resource.fileHash || 'legacy',
+      filename: resource.filename,
+      contributor: resource.uploadedBy,
+      reason: reason || 'No reason provided',
+      course: resource.course,
+      semester: resource.semester,
+      subject: resource.subject,
+      resourceType: resource.type
+    });
+
+    // ✅ Log in session
+    await logSessionAction(req, 'manageResources', {
+      type: 'REMOVE',
+      resourceID: resource._id.toString(),
+      filename: resource.filename,
+      contributor: resource.uploadedBy,
+      reason: reason || 'No reason provided',
+      relevanceScore: resource.relevanceScore || 0
+    });
+
+    // 🗑️ Delete file from GridFS
+    if (resource.fileId) {
+      try {
+        await gridfsBucket.delete(resource.fileId);
+        console.log(`🗑️ File ${resource.fileId} deleted from GridFS`);
+      } catch (error) {
+        console.warn('⚠️ Failed to delete file from GridFS:', error);
+      }
+    }
+
+    // ❌ Delete from Resource collection
+    await Resource.findByIdAndDelete(resourceId);
+
+    res.json({ success: true, message: 'Resource removed successfully' });
+
+  } catch (error) {
+    console.error('❌ Error removing resource:', error);
+    res.status(500).json({ error: 'Failed to remove resource' });
+  }
+});
+
+
+// Get admin transaction history(to be changed )
 app.get('/api/admin/transactions', isAdmin, async (req, res) => {
   try {
     const { page = 1, limit = 20, type } = req.query;
