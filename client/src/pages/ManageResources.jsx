@@ -1,9 +1,9 @@
-
 import React, { useState } from 'react';
 import { ChevronDown, ChevronRight, FileText, User, Calendar, Brain, CheckCircle, XCircle, RefreshCw } from 'lucide-react';
 import '../style/ManageResources.css'
 import { useEffect } from 'react';
 import axios from 'axios';
+import Navbar from '../component/Navbar';
 
 const AdminDashboard = () => {
   const [expandedRows, setExpandedRows] = useState({});
@@ -88,6 +88,24 @@ const AdminDashboard = () => {
     if (score >= 75) return 'text-yellow-600';
     return 'text-red-600';
   };
+
+  // Helper function to format relevance score
+  const formatRelevanceScore = (score) => {
+    if (typeof score === 'number') {
+      return `${Math.round(score)}%`;
+    }
+    return 'N/A';
+  };
+
+  // Helper function to get AI insights text
+  const getAIInsights = (aiInsights) => {
+    if (aiInsights && typeof aiInsights === 'string') {
+      // Truncate if too long
+      return aiInsights.length > 50 ? aiInsights.substring(0, 50) + '...' : aiInsights;
+    }
+    return 'No insights available';
+  };
+
   useEffect(() => {
     console.log('🧑‍💻 Admin username from session:', sessionStorage.getItem('username'));
 
@@ -115,6 +133,9 @@ const AdminDashboard = () => {
   }, []);
 
   return (
+    <>
+    <Navbar />
+
     <div className="min-h-screen bg-gray-50">
       <div className="bg-gradient-to-r from-blue-600 to-purple-600 text-white p-6 rounded-lg shadow-lg mb-8">
         <div className="flex items-center gap-3">
@@ -171,17 +192,17 @@ const AdminDashboard = () => {
                         <span className="text-gray-900">
                           {doc.uploadedAt ? new Date(doc.uploadedAt).toLocaleString() : 'Unknown'}
                         </span>
-
-
                       </div>
                     </td>
                     <td className="p-4">
                       <div className="flex items-center gap-2">
                         <Brain size={16} className="text-gray-400" />
                         <div>
-                          <div className="font-semibold text-green-600">92% Relevance</div>
+                          <div className={`font-semibold ${getScoreColor(doc.relevanceScore || 0)}`}>
+                            {formatRelevanceScore(doc.relevanceScore)} Relevance
+                          </div>
                           <div className="text-sm text-gray-600">
-                            Database Normalization, ACID Properties...
+                            {getAIInsights(doc.aiInsights)}
                           </div>
                         </div>
                       </div>
@@ -225,7 +246,6 @@ const AdminDashboard = () => {
                                     <div>
                                       <div className="font-medium text-gray-900">
                                         {resource.filename || 'Untitled'}
-
                                       </div>
                                     </div>
                                     <div className="flex items-center gap-2">
@@ -243,8 +263,12 @@ const AdminDashboard = () => {
                                     <div className="flex items-center gap-2">
                                       <Brain size={14} className="text-gray-400" />
                                       <div>
-                                        <div className="text-sm font-semibold text-yellow-600">88%</div>
-                                        <div className="text-xs text-gray-500">Basic SQL, ER Diagrams</div>
+                                        <div className={`text-sm font-semibold ${getScoreColor(resource.relevanceScore || 0)}`}>
+                                          {formatRelevanceScore(resource.relevanceScore)}
+                                        </div>
+                                        <div className="text-xs text-gray-500">
+                                          {getAIInsights(resource.aiInsights)}
+                                        </div>
                                       </div>
                                     </div>
                                     <div>
@@ -281,6 +305,7 @@ const AdminDashboard = () => {
         </div>
       </div>
     </div>
+        </>
   );
 };
 
