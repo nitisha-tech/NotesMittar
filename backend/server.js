@@ -10,6 +10,11 @@ const path = require('path');
 const cors = require('cors');
 
 const app = express();
+require('dotenv').config();
+const fs = require('fs');
+const crypto = require('crypto');
+
+const router = express.Router();
 
 console.log('Starting server...');
 
@@ -386,12 +391,6 @@ app.post('/api/change-password', async (req, res) => {
 
 // Upload Route with proper error handling
 // Upload Route with proper error handling
-require('dotenv').config();
-const fs = require('fs');
-const crypto = require('crypto');
-
-const router = express.Router();
-
 app.post('/api/upload', (req, res) => {
   upload.single('pdf')(req, res, async (err) => {
     if (err) {
@@ -472,8 +471,10 @@ app.post('/api/upload', (req, res) => {
         });
       }
 
-      // =================== AI RELEVANCE CHECK (FOR ALL TYPES) ===================
+      // =================== ENHANCED AI RELEVANCE CHECK ===================
       let relevanceScore = null;
+      let topicCoverage = [];
+      let coverageAnalysis = {};
       let status = '';
 
       try {
@@ -497,8 +498,8 @@ app.post('/api/upload', (req, res) => {
         let contextDescription = '';
         let formattedUnit = '';
 
-       if (type.toLowerCase() === 'notes' && unit && unit.length > 0) {
-       // Extract UNIT format (e.g. "UNIT 1")
+        if (type.toLowerCase() === 'notes' && unit && unit.length > 0) {
+          // Extract UNIT format (e.g. "UNIT 1")
           formattedUnit = (() => {
             const match = unit[0]?.match(/\d+/);
             return match ? `UNIT ${match[0]}` : unit[0]?.toUpperCase() || '';
@@ -514,16 +515,14 @@ app.post('/api/upload', (req, res) => {
             return res.status(400).json({ error: `Unit "${formattedUnit}" has no topics in syllabus.` });
           }
 
-         // Structured topics with subtopics
+          // Structured topics with subtopics
           topics = unitData.topics.filter(t => t.name && Array.isArray(t.subtopics));
-
           contextDescription = `Unit: ${formattedUnit}`;
         } else {
-        // For other types, flatten all topics
+          // For other types, flatten all topics
           topics = syllabus.units.flatMap(unit =>
             (unit.topics || []).filter(t => t.name && Array.isArray(t.subtopics))
           );
-
           contextDescription = 'All Units (Complete Syllabus)';
         }
 
@@ -534,38 +533,44 @@ app.post('/api/upload', (req, res) => {
         console.log('📚 Topics to check:', topics.length);
         console.log('📝 Context:', contextDescription);
 
+        // ENHANCED PROMPT WITH BETTER INSTRUCTIONS
         const prompt = `
-You are an AI evaluating how well uploaded educational content matches syllabus-defined topics and subtopics.
+You are an expert educational content evaluator. Analyze how well the uploaded content covers the required syllabus topics and subtopics.
 
-Subject: ${subject}
-Content Type: ${type}
-${contextDescription}
+EVALUATION CONTEXT:
+- Subject: ${subject}
+- Content Type: ${type}
+- Scope: ${contextDescription}
 
-Below are the syllabus topics with their required subtopics:
-${topics.map((t, i) => `${i + 1}. ${t.name}\n   Subtopics:\n   - ${t.subtopics.join('\n   - ')}`).join('\n\n')}
+SYLLABUS TOPICS TO EVALUATE:
+${topics.map((t, i) => `${i + 1}. ${t.name}\n   Required Subtopics:\n   ${t.subtopics.map(st => `   • ${st}`).join('\n')}`).join('\n\n')}
 
-Uploaded Content (first 4000 chars only):
-${fileText.slice(0, 4000)}
+UPLOADED CONTENT (first 5000 characters):
+${fileText.slice(0, 5000)}
 
-Instructions:
-1. For each topic, count how many of its subtopics are mentioned or well covered in the content.
-2. Respond strictly in this format:
+EVALUATION INSTRUCTIONS:
+1. For each topic, carefully analyze which subtopics are covered in the content
+2. A subtopic is "covered" if it's meaningfully discussed, explained, or referenced (not just mentioned)
+3. Look for synonyms, related terms, and contextual coverage
+4. Be thorough but not overly strict - educational content may use different terminology
 
+REQUIRED RESPONSE FORMAT (JSON only, no markdown):
 {
   "results": [
     {
-      "topic": "Topic Name 1",
-      "matched": 3,
-      "total": 5
-    },
-    {
-      "topic": "Topic Name 2",
-      "matched": 2,
-      "total": 4
+      "topic": "Exact Topic Name",
+      "matched": number_of_covered_subtopics,
+      "total": total_subtopics_count,
+      "coveredSubtopics": ["subtopic1", "subtopic2"],
+      "uncoveredSubtopics": ["subtopic3", "subtopic4"],
+      "coverageQuality": "excellent|good|partial|poor",
+      "notes": "Brief explanation of coverage quality"
     }
-  ]
+  ],
+  "overallAssessment": "Brief summary of content quality and completeness"
 }
-`;
+
+Respond with ONLY the JSON object, no additional text.`;
 
         console.log('🚀 Sending request to Gemini API...');
         const geminiRes = await axios.post(
@@ -573,8 +578,10 @@ Instructions:
           {
             contents: [{ parts: [{ text: prompt }] }],
             generationConfig: {
-              temperature: 0.1,
-              maxOutputTokens: 300
+              temperature: 0.2,
+              maxOutputTokens: 1000,
+              topP: 0.8,
+              topK: 40
             }
           }
         );
@@ -585,54 +592,126 @@ Instructions:
         if (!responseText) {
           throw new Error('Empty response from Gemini API');
         }
-        console.log('👀 Raw AI response:', responseText);
 
         let parsed = null;
+        
+        // IMPROVED JSON PARSING
         try {
+          // Try direct parsing first
           parsed = JSON.parse(responseText.trim());
         } catch (err) {
-          console.log('⚠️ Direct JSON parse failed, trying extraction...');
-          const jsonMatch = responseText.match(/```(?:json)?\s*({[\s\S]+?})\s*```/);
-
-          if (jsonMatch) {
+          console.log('⚠️ Direct JSON parse failed, trying extraction methods...');
+          
+          // Method 1: Extract from code blocks
+          const codeBlockMatch = responseText.match(/```(?:json)?\s*({[\s\S]*?})\s*```/);
+          if (codeBlockMatch) {
             try {
-              parsed = JSON.parse(jsonMatch[1]);
+              parsed = JSON.parse(codeBlockMatch[1]);
             } catch (e) {
-              console.log('❌ JSON extraction also failed');
+              console.log('❌ Code block extraction failed');
+            }
+          }
+          
+          // Method 2: Find JSON object in text
+          if (!parsed) {
+            const jsonMatch = responseText.match(/{[\s\S]*}/);
+            if (jsonMatch) {
+              try {
+                parsed = JSON.parse(jsonMatch[0]);
+              } catch (e) {
+                console.log('❌ JSON object extraction failed');
+              }
+            }
+          }
+          
+          // Method 3: Clean and retry
+          if (!parsed) {
+            const cleaned = responseText
+              .replace(/```json\s*|\s*```/g, '')
+              .replace(/^\s*[\w\s]*?{/, '{')
+              .replace(/}\s*[\w\s]*?$/, '}')
+              .trim();
+            try {
+              parsed = JSON.parse(cleaned);
+            } catch (e) {
+              console.log('❌ All parsing methods failed');
             }
           }
         }
 
-        console.log('🔍 Parsed result:', parsed);
+        console.log('🔍 Parsed result:', JSON.stringify(parsed, null, 2));
 
+        // ENHANCED VALIDATION
         if (
           parsed &&
           Array.isArray(parsed.results) &&
+          parsed.results.length > 0 &&
           parsed.results.every(r =>
             typeof r.matched === 'number' &&
             typeof r.total === 'number' &&
             r.matched >= 0 &&
-            r.total > 0
+            r.total > 0 &&
+            r.matched <= r.total &&
+            typeof r.topic === 'string' &&
+            Array.isArray(r.coveredSubtopics) &&
+            Array.isArray(r.uncoveredSubtopics)
           )
         ) {
           const results = parsed.results;
           const totalTopicsInUnit = topics.length;
           let relevanceSum = 0;
 
+          // Calculate relevance score
           results.forEach(r => {
-            const topicMatchWeight = 1 / totalTopicsInUnit; // Contribution of each topic
-            const subtopicMatchRatio = r.matched / r.total; // Ratio of subtopics matched in that topic
+            const topicMatchWeight = 1 / totalTopicsInUnit;
+            const subtopicMatchRatio = r.matched / r.total;
             relevanceSum += topicMatchWeight * subtopicMatchRatio;
           });
 
           relevanceScore = Math.round(Math.max(0, Math.min(relevanceSum * 100, 100)));
 
+          // Store detailed topic coverage for response
+          topicCoverage = results.map(r => ({
+            topic: r.topic,
+            matched: r.matched,
+            total: r.total,
+            coveredSubtopics: r.coveredSubtopics || [],
+            uncoveredSubtopics: r.uncoveredSubtopics || [],
+            coverageQuality: r.coverageQuality || 'unknown',
+            notes: r.notes || '',
+            coveragePercentage: Math.round((r.matched / r.total) * 100)
+          }));
 
-          console.log(`✅ AI Analysis Complete:`);
+          // Create coverage analysis summary
+          const totalSubtopics = results.reduce((sum, r) => sum + r.total, 0);
+          const coveredSubtopics = results.reduce((sum, r) => sum + r.matched, 0);
+          
+          coverageAnalysis = {
+            totalTopics: results.length,
+            totalSubtopics,
+            coveredSubtopics,
+            uncoveredSubtopics: totalSubtopics - coveredSubtopics,
+            overallCoveragePercentage: Math.round((coveredSubtopics / totalSubtopics) * 100),
+            topicBreakdown: {
+              excellent: results.filter(r => r.coverageQuality === 'excellent').length,
+              good: results.filter(r => r.coverageQuality === 'good').length,
+              partial: results.filter(r => r.coverageQuality === 'partial').length,
+              poor: results.filter(r => r.coverageQuality === 'poor').length
+            },
+            overallAssessment: parsed.overallAssessment || 'Analysis completed'
+          };
+
+          console.log(`✅ Enhanced AI Analysis Complete:`);
           results.forEach((r, i) => {
-            console.log(`   ${i + 1}. ${r.topic} - Matched ${r.matched}/${r.total}`);
+            console.log(`   ${i + 1}. ${r.topic} - ${r.matched}/${r.total} (${r.coverageQuality})`);
+            console.log(`      Covered: ${r.coveredSubtopics.join(', ')}`);
+            if (r.uncoveredSubtopics.length > 0) {
+              console.log(`      Missing: ${r.uncoveredSubtopics.join(', ')}`);
+            }
           });
-          console.log(`   - Final Relevance Score: ${relevanceScore}%`);
+          console.log(`   📊 Final Relevance Score: ${relevanceScore}%`);
+          console.log(`   📈 Overall Coverage: ${coverageAnalysis.overallCoveragePercentage}%`);
+
         } else {
           throw new Error('Invalid or incomplete AI response structure');
         }
@@ -694,6 +773,7 @@ Instructions:
 
       console.log(`📊 Final Status Decision: ${status} (Score: ${relevanceScore}%)`);
 
+      // Store enhanced data in database
       const resource = await Resource.create({
         filename,
         fileId: gridFSFile._id,
@@ -707,7 +787,9 @@ Instructions:
         uploadedBy: existingUser.username,
         uploadDate: new Date(),
         relevanceScore,
-        fileHash
+        fileHash,
+        topicCoverage, // New field for detailed coverage
+        coverageAnalysis // New field for summary analysis
       });
 
       const scoreIncrement = status === 'approved' ? 1 : 0.5;
@@ -718,12 +800,16 @@ Instructions:
         { new: true }
       );
 
+      // ENHANCED RESPONSE WITH TOPIC COVERAGE DETAILS
       return res.status(201).json({
         message: `Upload ${status}! Your contribution has been ${status === 'approved' ? 'accepted' : 'submitted for review'}.`,
         status,
         filename,
         fileId: gridFSFile._id,
-        relevanceScore
+        relevanceScore,
+        coverageAnalysis,
+        topicCoverage,
+        recommendations: generateRecommendations(topicCoverage, relevanceScore, status)
       });
 
     } catch (error) {
@@ -732,6 +818,34 @@ Instructions:
     }
   });
 });
+
+// HELPER FUNCTION TO GENERATE RECOMMENDATIONS
+function generateRecommendations(topicCoverage, relevanceScore, status) {
+  const recommendations = [];
+  
+  if (relevanceScore < 60) {
+    recommendations.push("Content coverage is below expectations. Consider adding more comprehensive explanations.");
+  }
+  
+  const poorCoverage = topicCoverage.filter(t => t.coverageQuality === 'poor');
+  if (poorCoverage.length > 0) {
+    recommendations.push(`Improve coverage for: ${poorCoverage.map(t => t.topic).join(', ')}`);
+  }
+  
+  const uncoveredTopics = topicCoverage.filter(t => t.matched === 0);
+  if (uncoveredTopics.length > 0) {
+    recommendations.push(`Missing topics: ${uncoveredTopics.map(t => t.topic).join(', ')}`);
+  }
+  
+  if (status === 'approved' && relevanceScore >= 90) {
+    recommendations.push("Excellent coverage! This content comprehensively addresses the syllabus requirements.");
+  }
+  
+  return recommendations;
+}
+
+
+
 
 // Fetch Contribution History Route
 app.get('/api/my-resources', async (req, res) => {
