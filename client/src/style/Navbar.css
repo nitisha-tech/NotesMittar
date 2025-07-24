@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 header {
   background-color: #1c1f26;
   padding: 1rem 2rem;
@@ -179,3 +180,225 @@ nav a:hover {
   height: 100%;
   background: transparent;
 }
+=======
+
+/* Add these styles to your existing Navbar.css */
+
+/* Add these styles to your existing Navbar.css */
+
+/* Add these styles to your existing Navbar.css */
+
+/* Fixed Navbar CSS for consistent alignment */
+
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 2rem;
+  background: black;
+  color: white;
+  position: relative;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.logo {
+  font-size: 1.5rem;
+  font-weight: bold;
+  color: #ecf0f1;
+  flex-shrink: 0;
+}
+
+nav {
+  display: flex;
+  align-items: center;
+  gap: 2rem;
+  flex: 1;
+  justify-content: flex-end;
+  min-height: 40px; /* Ensure consistent height */
+}
+
+nav a {
+  color: #ecf0f1;
+  text-decoration: none;
+  font-weight: 500;
+  transition: color 0.3s ease;
+  white-space: nowrap;
+}
+
+nav a:hover {
+  color: #3498db;
+}
+
+/* Upload button styling */
+.upload-btn {
+  background: #3498db;
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 5px;
+  cursor: pointer;
+  font-weight: 500;
+  text-decoration: none;
+  transition: all 0.3s ease;
+  white-space: nowrap;
+  min-width: 80px; /* Consistent button width */
+  text-align: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 36px; /* Fixed height */
+}
+
+.upload-btn:hover {
+  background: #2980b9;
+  transform: translateY(-1px);
+}
+
+/* Profile section wrapper */
+.profile-section {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  min-width: 120px; /* Reserve space for profile section */
+  justify-content: flex-end;
+}
+
+.profile-dp-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.dp-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid transparent;
+  flex-shrink: 0;
+}
+
+.dp-icon:hover {
+  transform: scale(1.05);
+  border-color: #3498db;
+  box-shadow: 0 2px 8px rgba(52, 152, 219, 0.3);
+}
+
+/* For actual profile images */
+.dp-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+}
+
+/* For default avatar icon */
+.default-avatar {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  font-size: 16px;
+  font-weight: 500;
+  position: relative;
+  overflow: hidden;
+}
+
+.default-avatar::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: linear-gradient(45deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+  transform: rotate(45deg);
+  transition: all 0.5s ease;
+  opacity: 0;
+}
+
+.default-avatar:hover::before {
+  opacity: 1;
+  animation: shimmer 1s ease-in-out;
+}
+
+.default-avatar svg {
+  width: 24px;
+  height: 24px;
+  color: white;
+}
+
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%) translateY(-100%) rotate(45deg);
+  }
+  100% {
+    transform: translateX(100%) translateY(100%) rotate(45deg);
+  }
+}
+
+/* Active state when sidebar is open */
+.profile-dp-wrapper.active .dp-icon {
+  border-color: #3498db;
+  box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.2);
+}
+
+/* Loading state */
+.dp-icon.loading {
+  opacity: 0.7;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0% {
+    opacity: 0.7;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.7;
+  }
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  header {
+    padding: 1rem;
+  }
+  
+  nav {
+    gap: 1rem;
+  }
+  
+  .upload-btn {
+    padding: 0.4rem 0.8rem;
+    font-size: 0.9rem;
+    min-width: 70px;
+  }
+  
+  .dp-icon {
+    width: 35px;
+    height: 35px;
+  }
+}
+
+@media (max-width: 480px) {
+  nav {
+    gap: 0.5rem;
+  }
+  
+  nav a {
+    font-size: 0.9rem;
+  }
+  
+  .logo {
+    font-size: 1.2rem;
+  }
+}
+>>>>>>> 06c128c0d22097dd48c9533a353c8c3e39cc3bb8
