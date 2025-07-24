@@ -1,12 +1,19 @@
+
 import { Link, useNavigate } from 'react-router-dom';
 import '../style/Home.css'; // Ensure you have styles (or import global CSS if applicable)
 import heroImage from '../assets/images/young-female-friends-studying-together.png';
 import resourceImg from '../assets/images/resources.PNG';
 import scoreboardImg from '../assets/images/scoreboard.png';
 import smartUploadImg from '../assets/images/smartUpload.PNG';
+import Navbar from '../component/Navbar';
+import ContactUs from '../component/ContactUs';
+import { useEffect, useState } from 'react';
+import axios from 'axios';
+
 
 function Home() {
   const navigate = useNavigate();
+  const [topScorers, setTopScorers] = useState([]);
 
   const browseResources = () => {
     navigate('/resources');
@@ -16,19 +23,16 @@ function Home() {
     const isLoggedIn = sessionStorage.getItem('loggedIn') === 'true';
     navigate(isLoggedIn ? '/upload' : '/login');
   };
+  useEffect(() => {
+  axios.get('http://localhost:5000/api/leaderboard')
+    .then(res => setTopScorers(res.data.slice(0, 3)))
+    .catch(err => console.error('Error fetching top scorers:', err));
+}, []);
 
   return (
     <>
-      <header>
-        <div className="logo">NotesMittar</div>
-        <nav>
-          <Link to="/">Home</Link>
-          <a href="#features">Features</a>
-          <Link to="/scoreboard">Scoreboard</Link>
-          <Link to="/login">Login</Link>
-        </nav>
-      </header>
-
+     
+      <Navbar/>
       <section className="hero">
         <div className="hero-text">
           <h1>Exams hain !</h1>
@@ -67,17 +71,25 @@ function Home() {
       </section>
 
       <section id="scoreboard" className="scoreboard">
-        <h2>Top Mittars of the Month</h2>
-        <ol>
-          <li><strong>Simran K.</strong> – 14 uploads</li>
-          <li><strong>Dev R.</strong> – 11 uploads</li>
-          <li><strong>Sana P.</strong> – 9 uploads</li>
-        </ol>
-      </section>
+  <h2>Top Mittars of the Month</h2>
+  <ol>
+    {topScorers.length > 0 ? (
+      topScorers.map((user, idx) => (
+        <li key={user.username}>
+          <strong>{user.username}</strong> – {user.totalUploads} uploads
+        </li>
+      ))
+    ) : (
+      <p>Loading top contributors...</p>
+    )}
+  </ol>
+</section>
+
 
       <footer>
         <p>© 2025 NotesMittar | Made with ❤️ by Students | Tere Exams Ka Sacha Yaar</p>
       </footer>
+    <ContactUs/>
     </>
   );
 }

@@ -1,12 +1,21 @@
+
 import { Routes, Route, Link } from 'react-router-dom';
 import Home from './pages/Home';
 import About from './pages/About';
 import Resources from './pages/Resources';
 import Login from './pages/Login';
 import Signup from './pages/Signup';
-import Scoreboard from './pages/Scoreboard';
-import Contributor from './pages/Contributor';
+import ContributorPage from './pages/ContributorPage';
+import AdminHome from './pages/AdminHome';
+import ManageContributor from './pages/ManageContributor';
+import ManageResources from './pages/ManageResources';
+
 import Upload from './pages/Upload';
+import { Navigate } from 'react-router-dom';
+import ProtectedRoute from './component/ProtectedRoute';
+import LeaderboardPage from './pages/LeaderboardPage';
+import NavLogin from './pages/NavLogin';
+import ProfilePage from './pages/ProfilePage';
 
 function App() {
   return (
@@ -14,13 +23,32 @@ function App() {
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/about" element={<About />} />
-        <Route path="/Resources" element={<Resources />} />
+        <Route path="/Resources" element={<ProtectedRoute>
+          <Resources />
+        </ProtectedRoute>} />
         <Route path="/login" element={<Login />} />
+        <Route path="/NavLogin" element={<NavLogin />} />
         <Route path="/signup" element={<Signup />} />
-        <Route path ="/Scoreboard" element ={<Scoreboard/>} />
-        <Route path ="/Contributor/:name" element ={<Contributor/>}/>     
-        <Route path ="/Upload" element ={<Upload/>}/>
-     </Routes>
+        <Route path="/Scoreboard" element={<ProtectedRoute>
+         <LeaderboardPage  />
+        </ProtectedRoute>} />
+         <Route path="/Contributor/:username" element={<ContributorPage />} />
+        <Route
+          path="/upload"
+          element={
+            <ProtectedRoute>
+              <Upload />
+            </ProtectedRoute>
+          }
+        />
+         <Route path="/adminHome" element={<AdminHome />} />
+  <Route path="/admin/manage-contributors" element={<ManageContributor />} />
+  <Route path="/admin/manage-resources" element={<ManageResources />} />
+  
+   <Route path="/ProfilePage" element={<ProfilePage />} />
+      </Routes>
+      
+      
     </div>
   );
 }
