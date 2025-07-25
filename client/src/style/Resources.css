@@ -12,15 +12,11 @@ Container for the entire view
 
 /* Header Styles */
 .resources-header {
-<<<<<<< HEAD
-  background: rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(20px);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
-=======
+
   background: rgba(0, 0, 0, 0.1);
   backdrop-filter: blur(20px);
   border-bottom: 1px solid rgba(0, 0, 0, 0.2);
->>>>>>> 06c128c0d22097dd48c9533a353c8c3e39cc3bb8
+
   padding: 1.5rem 2rem;
   position: sticky;
   top: 0;
@@ -36,7 +32,7 @@ Container for the entire view
   display: flex;
   align-items: center;
   gap: 1rem;
-<<<<<<< HEAD
+
 }
 
 .back-button {
@@ -56,7 +52,7 @@ Container for the entire view
 
 .back-button:hover {
   background: #e0e0e0;
-=======
+
 }
 
 .back-button {
@@ -534,7 +530,7 @@ Container for the entire view
   background: rgba(0, 0, 0, 0.25);
   transform: translateY(-3px);
   box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
->>>>>>> 06c128c0d22097dd48c9533a353c8c3e39cc3bb8
+
 }
 
 .header-info {

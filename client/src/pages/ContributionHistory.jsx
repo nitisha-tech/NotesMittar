@@ -1,7 +1,4 @@
-<<<<<<< HEAD
 
-=======
->>>>>>> 06c128c0d22097dd48c9533a353c8c3e39cc3bb8
 import React, { useEffect, useState } from 'react';
 import '../style/ContributionHistory.css';
 
@@ -31,23 +28,18 @@ export default function ContributionHistory() {
         const data = await res.json();
         console.log('Fetched contributions:', data);
         
-<<<<<<< HEAD
-        // Debug: Log each document's properties including new fields
-=======
-        // Debug: Log each document's properties
->>>>>>> 06c128c0d22097dd48c9533a353c8c3e39cc3bb8
+
         data.forEach((doc, index) => {
           console.log(`Document ${index}:`, {
             filename: doc.filename,
             type: doc.type,
             status: doc.status,
             relevanceScore: doc.relevanceScore,
-<<<<<<< HEAD
+
             topicCoverage: doc.topicCoverage,
             coverageAnalysis: doc.coverageAnalysis,
             recommendations: doc.recommendations,
-=======
->>>>>>> 06c128c0d22097dd48c9533a353c8c3e39cc3bb8
+
             allFields: Object.keys(doc)
           });
         });
@@ -100,7 +92,7 @@ export default function ContributionHistory() {
     return '#dc3545'; // Red
   };
 
-<<<<<<< HEAD
+
   // Get topic coverage summary for display
   const getTopicCoverageSummary = (doc) => {
     if (!doc.topicCoverage || !Array.isArray(doc.topicCoverage)) {
@@ -147,14 +139,12 @@ export default function ContributionHistory() {
 
   // Enhanced analysis reasons based on topic coverage
   const getAnalysisReasons = (doc) => {
-=======
-  const getReasonForScore = (doc) => {
->>>>>>> 06c128c0d22097dd48c9533a353c8c3e39cc3bb8
+
     const score = getRelevanceScore(doc);
     if (score === null) return [];
 
     const reasons = [];
-<<<<<<< HEAD
+
     const topicSummary = getTopicCoverageSummary(doc);
 
     if (topicSummary) {
@@ -172,27 +162,16 @@ export default function ContributionHistory() {
       if (score >= 80) {
         reasons.push("✅ Excellent content alignment with syllabus");
         reasons.push("✅ Comprehensive coverage of topics");
+        reasons.push("✅ High educational value");
       } else if (score >= 60) {
         reasons.push("⚠️ Good content but some gaps in coverage");
         reasons.push("⚠️ Moderate alignment with syllabus");
+        if (doc.type === 'Notes') reasons.push("⚠️ Could benefit from more detailed explanations");
       } else {
         reasons.push("❌ Low relevance to course syllabus");
         reasons.push("❌ Content doesn't match expected topics");
+        reasons.push("❌ Poor alignment with semester requirements");
       }
-=======
-    if (score >= 80) {
-      reasons.push("✅ Excellent content alignment with syllabus");
-      reasons.push("✅ Comprehensive coverage of topics");
-      reasons.push("✅ High educational value");
-    } else if (score >= 60) {
-      reasons.push("⚠️ Good content but some gaps in coverage");
-      reasons.push("⚠️ Moderate alignment with syllabus");
-      if (doc.type === 'Notes') reasons.push("⚠️ Could benefit from more detailed explanations");
-    } else {
-      reasons.push("❌ Low relevance to course syllabus");
-      reasons.push("❌ Content doesn't match expected topics");
-      reasons.push("❌ Poor alignment with semester requirements");
->>>>>>> 06c128c0d22097dd48c9533a353c8c3e39cc3bb8
     }
 
     return reasons;
@@ -292,7 +271,6 @@ export default function ContributionHistory() {
           </div>
         </div>
 
-<<<<<<< HEAD
         {/* Enhanced Coverage Analysis */}
         {doc.coverageAnalysis && (
           <div className="coverage-analysis" style={{marginBottom: '15px'}}>
@@ -316,12 +294,6 @@ export default function ContributionHistory() {
           <strong>📋 Analysis Summary:</strong>
           <ul style={{margin: '8px 0', paddingLeft: '0', listStyle: 'none'}}>
             {getAnalysisReasons(doc).map((reason, idx) => (
-=======
-        <div className="analysis-reasons" style={{marginBottom: '15px'}}>
-          <strong>📋 Analysis Reasons:</strong>
-          <ul style={{margin: '8px 0', paddingLeft: '0', listStyle: 'none'}}>
-            {getReasonForScore(doc).map((reason, idx) => (
->>>>>>> 06c128c0d22097dd48c9533a353c8c3e39cc3bb8
               <li key={idx} style={{
                 padding: '3px 0',
                 fontSize: '0.85rem',
@@ -346,7 +318,6 @@ export default function ContributionHistory() {
             )}
           </ul>
         </div>
-<<<<<<< HEAD
 
         {/* AI Generated Recommendations Section */}
         <div className="ai-recommendations-box" style={{
@@ -416,35 +387,6 @@ export default function ContributionHistory() {
     );
   };
 
-=======
-
-        <div className="suggestion-box" style={{
-          background: 'linear-gradient(135deg, #e3f2fd 0%, #f3e5f5 100%)',
-          padding: '12px',
-          borderRadius: '6px',
-          borderLeft: '4px solid #2196f3'
-        }}>
-          <strong style={{color: '#1976d2', marginBottom: '8px', display: 'block'}}>💡 AI Recommendation:</strong>
-          <p style={{
-            margin: '0',
-            color: '#424242',
-            fontSize: '0.85rem',
-            lineHeight: '1.5'
-          }}>
-            {doc.status === 'rejected' && relevanceScore < 60
-              ? `🚫 Content rejected due to low relevance (${relevanceScore}%). Please ensure your upload aligns with syllabus requirements.`
-              : relevanceScore >= 80
-              ? `🌟 Excellent contribution! Your ${doc.type.toLowerCase()} provides high-quality content.`
-              : relevanceScore >= 60
-              ? `👍 Good contribution! Consider enhancing with more detailed explanations.`
-              : `⚠️ Content needs improvement. Focus on aligning with syllabus topics.`}
-          </p>
-        </div>
-      </div>
-    );
-  };
-
->>>>>>> 06c128c0d22097dd48c9533a353c8c3e39cc3bb8
   if (loading) {
     return (
       <div className="history-container">

@@ -1,4 +1,4 @@
-<<<<<<< HEAD
+
 header {
   background-color: #1c1f26;
   padding: 1rem 2rem;
@@ -180,7 +180,7 @@ nav a:hover {
   height: 100%;
   background: transparent;
 }
-=======
+
 
 /* Add these styles to your existing Navbar.css */
 
@@ -401,4 +401,4 @@ nav a:hover {
     font-size: 1.2rem;
   }
 }
->>>>>>> 06c128c0d22097dd48c9533a353c8c3e39cc3bb8
+
