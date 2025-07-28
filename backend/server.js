@@ -14,6 +14,7 @@ const ResourceView = require('./models/Resource_Views'); // Add this import
 const multer = require('multer');
 const path = require('path');
 const cors = require('cors');
+const { getAllGeminiKeys } = require("./utils/geminiKeyManager");
 
 const app = express();
 require('dotenv').config();
@@ -397,6 +398,10 @@ app.post('/api/change-password', async (req, res) => {
 
 // Upload Route with proper error handling
 // Upload Route with proper error handling
+// Add this import at the top of your file (with other imports)
+
+// Add this import at the top of your file (with other imports)
+
 app.post('/api/upload', (req, res) => {
   upload.single('pdf')(req, res, async (err) => {
     if (err) {
@@ -470,10 +475,14 @@ app.post('/api/upload', (req, res) => {
       const existing = await Resource.findOne({ fileHash, status: 'approved' });
       if (existing) {
         return res.status(409).json({
-          error: '❌ This file already exists and has been approved. Duplicate upload rejected.',
-          status: 'rejected',
-          relevanceScore: 100,
-          reason: 'Duplicate of already approved file'
+          error: '❌ This exact file already exists and has been approved. Duplicate upload rejected.',
+          status: 'duplicate',
+          conflict: true,
+          existingFile: {
+            filename: existing.filename,
+            uploadedBy: existing.uploadedBy,
+            uploadDate: existing.uploadDate
+          }
         });
       }
 
@@ -482,6 +491,10 @@ app.post('/api/upload', (req, res) => {
       let topicCoverage = [];
       let coverageAnalysis = {};
       let status = '';
+
+      // Check if user is admin BEFORE AI analysis
+      const isAdmin = existingUser.username.toLowerCase() === 'admin';
+      console.log(`👤 Username: ${existingUser.username} | Admin: ${isAdmin}`);
 
       try {
         console.log('🤖 Starting AI relevance check...');
@@ -538,7 +551,7 @@ app.post('/api/upload', (req, res) => {
 
         console.log('📚 Topics to check:', topics.length);
         console.log('📝 Context:', contextDescription);
-
+        
         // ENHANCED PROMPT WITH BETTER INSTRUCTIONS
         const prompt = `
 You are an expert educational content evaluator. Analyze how well the uploaded content covers the required syllabus topics and subtopics.
@@ -579,18 +592,63 @@ REQUIRED RESPONSE FORMAT (JSON only, no markdown):
 Respond with ONLY the JSON object, no additional text.`;
 
         console.log('🚀 Sending request to Gemini API...');
-        const geminiRes = await axios.post(
-          `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
-          {
-            contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: {
-              temperature: 0.2,
-              maxOutputTokens: 1000,
-              topP: 0.8,
-              topK: 40
+        
+        // NEW: Key rotation functionality
+        const allKeys = getAllGeminiKeys();
+        let geminiRes = null;
+        let lastError = null;
+        
+        for (let i = 0; i < allKeys.length; i++) {
+          const currentKey = allKeys[i];
+          console.log(`🔑 Trying key ${i + 1}/${allKeys.length}...`);
+          
+          try {
+            geminiRes = await axios.post(
+              `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${currentKey}`,
+              {
+                contents: [{ parts: [{ text: prompt }] }],
+                generationConfig: {
+                  temperature: 0.2,
+                  maxOutputTokens: 1000,
+                  topP: 0.8,
+                  topK: 40
+                }
+              }
+            );
+            
+            // If successful, break out of the loop
+            console.log(`✅ Key ${i + 1} worked successfully!`);
+            break;
+            
+          } catch (keyError) {
+            console.log(`❌ Key ${i + 1} failed:`, keyError.message);
+            lastError = keyError;
+            
+            // Check if it's a model overload or quota exceeded error
+            const isOverloadError = keyError.response?.status === 429 || 
+                                  keyError.response?.status === 503 ||
+                                  keyError.message?.toLowerCase().includes('overload') ||
+                                  keyError.message?.toLowerCase().includes('quota') ||
+                                  keyError.message?.toLowerCase().includes('rate limit') ||
+                                  keyError.response?.data?.error?.message?.toLowerCase().includes('overload') ||
+                                  keyError.response?.data?.error?.message?.toLowerCase().includes('quota');
+            
+            if (isOverloadError) {
+              console.log(`🔄 Model overload detected with key ${i + 1}, trying next key...`);
+              continue;
+            } else {
+              // If it's not an overload error, don't try other keys
+              console.log(`🚫 Non-overload error with key ${i + 1}, stopping key rotation.`);
+              throw keyError;
             }
           }
-        );
+        }
+        
+        // If all keys failed
+        if (!geminiRes) {
+          console.error('❌ All Gemini API keys failed');
+          throw lastError || new Error('All API keys exhausted');
+        }
 
         const responseText = geminiRes.data.candidates[0]?.content?.parts[0]?.text || '';
         console.log('🔄 Gemini Raw Response:', responseText);
@@ -647,7 +705,7 @@ Respond with ONLY the JSON object, no additional text.`;
 
         console.log('🔍 Parsed result:', JSON.stringify(parsed, null, 2));
 
-        // ENHANCED VALIDATION
+        // ENHANCED VALIDATION (Fixed to handle cases where matched > total)
         if (
           parsed &&
           Array.isArray(parsed.results) &&
@@ -657,7 +715,6 @@ Respond with ONLY the JSON object, no additional text.`;
             typeof r.total === 'number' &&
             r.matched >= 0 &&
             r.total > 0 &&
-            r.matched <= r.total &&
             typeof r.topic === 'string' &&
             Array.isArray(r.coveredSubtopics) &&
             Array.isArray(r.uncoveredSubtopics)
@@ -667,16 +724,18 @@ Respond with ONLY the JSON object, no additional text.`;
           const totalTopicsInUnit = topics.length;
           let relevanceSum = 0;
 
-          // Calculate relevance score
+          // Calculate relevance score (with safeguards for matched > total)
           results.forEach(r => {
             const topicMatchWeight = 1 / totalTopicsInUnit;
-            const subtopicMatchRatio = r.matched / r.total;
+            // Ensure matched doesn't exceed total for calculation purposes
+            const normalizedMatched = Math.min(r.matched, r.total);
+            const subtopicMatchRatio = normalizedMatched / r.total;
             relevanceSum += topicMatchWeight * subtopicMatchRatio;
           });
 
           relevanceScore = Math.round(Math.max(0, Math.min(relevanceSum * 100, 100)));
 
-          // Store detailed topic coverage for response
+          // Store detailed topic coverage for response (with safeguards)
           topicCoverage = results.map(r => ({
             topic: r.topic,
             matched: r.matched,
@@ -685,12 +744,12 @@ Respond with ONLY the JSON object, no additional text.`;
             uncoveredSubtopics: r.uncoveredSubtopics || [],
             coverageQuality: r.coverageQuality || 'unknown',
             notes: r.notes || '',
-            coveragePercentage: Math.round((r.matched / r.total) * 100)
+            coveragePercentage: Math.round((Math.min(r.matched, r.total) / r.total) * 100)
           }));
 
-          // Create coverage analysis summary
+          // Create coverage analysis summary (with safeguards)
           const totalSubtopics = results.reduce((sum, r) => sum + r.total, 0);
-          const coveredSubtopics = results.reduce((sum, r) => sum + r.matched, 0);
+          const coveredSubtopics = results.reduce((sum, r) => sum + Math.min(r.matched, r.total), 0);
           
           coverageAnalysis = {
             totalTopics: results.length,
@@ -752,32 +811,61 @@ Respond with ONLY the JSON object, no additional text.`;
 
       console.log('✅ GridFS upload successful:', gridFSFile._id);
 
-      // STATUS DETERMINATION BASED ON RELEVANCE SCORE
-      if (type.toLowerCase() !== 'notes') {
-        const existing = await Resource.countDocuments({
-          course,
-          semester,
-          subject,
-          type,
-          status: 'approved'
-        });
-        status = existing >= 2 ? 'pending' : 'approved';
+      
+
+// Extract admin threshold from form data if provided
+      // In your existing upload route in server.js, modify the threshold logic section:
+
+// Get user data to check admin status
+      const username = req.headers.username;
+ // Make sure you have this import
+
+      let userIsAdmin = false;
+      try {
+        const user = await User.findOne({ username: username });
+        userIsAdmin = user ? user.isAdmin : false;
+      } catch (error) {
+        console.error('Error checking user admin status:', error);
+        userIsAdmin = false;
+      }
+
+// Extract admin threshold from form data if provided
+      const adminThreshold = req.body.adminThreshold ? parseInt(req.body.adminThreshold) : null;
+
+// Set relevance threshold based on admin status and provided threshold
+      let relevanceThreshold;
+      if (userIsAdmin && adminThreshold !== null) {
+        relevanceThreshold = adminThreshold;
+      } else if (userIsAdmin) {
+        relevanceThreshold = 20; // Default admin threshold
       } else {
-        if (relevanceScore >= 80) {
-          const existing = await Resource.countDocuments({
-            course,
-            semester,
-            subject,
-            type,
-            status: 'approved'
-          });
-          status = existing >= 2 ? 'rejected' : 'approved';
+        relevanceThreshold = 80; // Default user threshold
+      }
+
+      console.log(`🎯 Threshold Used: ${relevanceThreshold}% (Admin: ${userIsAdmin})`);
+
+// Get existing approved resources count once
+      let existingCount = await Resource.countDocuments({
+        course,
+        semester,
+        subject,
+        type,
+        status: 'approved'
+      });
+
+      console.log(`📊 Relevance Score: ${relevanceScore}`);
+      console.log(`📁 Existing approved count: ${existingCount}`);
+
+// Now determine status (keep your existing logic)
+      if (type.toLowerCase() !== 'notes') {
+        status = existingCount >= 2 ? 'pending' : 'approved';
+      } else {
+        if (relevanceScore >= relevanceThreshold) {
+          status = existingCount >= 2 ? 'pending' : 'approved';
         } else {
           status = 'rejected';
         }
       }
-
-      console.log(`📊 Final Status Decision: ${status} (Score: ${relevanceScore}%)`);
 
       // Store enhanced data in database
       const resource = await Resource.create({
@@ -815,7 +903,8 @@ Respond with ONLY the JSON object, no additional text.`;
         relevanceScore,
         coverageAnalysis,
         topicCoverage,
-        recommendations: generateRecommendations(topicCoverage, relevanceScore, status)
+        recommendations: generateRecommendations(topicCoverage, relevanceScore, status),
+        adminOverride: isAdmin ? 'Admin privileges applied - relaxed threshold used' : null
       });
 
     } catch (error) {
@@ -849,90 +938,6 @@ function generateRecommendations(topicCoverage, relevanceScore, status) {
   
   return recommendations;
 }
-
-
-
-
-// Fetch Contribution History Route
-app.get('/api/my-resources', async (req, res) => {
-  const username = req.headers.username;
-
-  console.log('Fetching resources for user:', username);
-
-  if (!username) {
-    return res.status(400).json({ error: 'Username required in headers' });
-  }
-
-  try {
-    const resources = await Resource.find({ uploadedBy: username }).sort({ uploadDate: -1 });
-    console.log(`Found ${resources.length} resources for user ${username}`);
-
-    const enriched = resources.map(doc => ({
-      filename: doc.filename,
-      course: doc.course,
-      semester: doc.semester,
-      subject: doc.subject,
-      type: doc.type,
-      unit: doc.unit,
-      year: doc.year,
-      status: doc.status,
-      uploadDate: doc.uploadDate,
-      fileId: doc.fileId,
-      relevanceScore: typeof doc.relevanceScore === 'number' ? doc.relevanceScore : null
-    }));
-    
-    console.log('📤 Sending resources to frontend:', enriched.map(r => ({
-      filename: r.filename,
-      score: r.relevanceScore,
-      status: r.status
-    })));
-
-    res.json(enriched);
-  } catch (error) {
-    console.error('Fetch error:', error);
-    res.status(500).json({ error: 'Could not fetch resources' });
-  }
-});
-
-// Fetch Contribution History Route
-app.get('/api/my-resources', async (req, res) => {
-  const username = req.headers.username;
-
-  console.log('Fetching resources for user:', username);
-
-  if (!username) {
-    return res.status(400).json({ error: 'Username required in headers' });
-  }
-
-  try {
-    const resources = await Resource.find({ uploadedBy: username }).sort({ uploadDate: -1 });
-    console.log(`Found ${resources.length} resources for user ${username}`);
-
-    const enriched = resources.map(doc => ({
-      filename: doc.filename,
-      course: doc.course,
-      semester: doc.semester,
-      subject: doc.subject,
-      type: doc.type,
-      unit: doc.unit,
-      year: doc.year,
-      status: doc.status,
-      uploadDate: doc.uploadDate,
-      fileId: doc.fileId,
-      relevanceScore: typeof doc.relevanceScore === 'number' ? doc.relevanceScore : null
-    }));
-    console.log('📤 Sending resources to frontend:', enriched.map(r => ({
-      filename: r.filename,
-      score: r.relevanceScore,
-      status: r.status
-    })));
-
-    res.json(enriched);
-  } catch (error) {
-    console.error('Fetch error:', error);
-    res.status(500).json({ error: 'Could not fetch resources' });
-  }
-});
 // Fetch Contribution History Route
 app.get('/api/my-resources', async (req, res) => {
   const username = req.headers.username;
@@ -1021,7 +1026,7 @@ app.post('/api/record-view/:resourceId', async (req, res) => {
   }
 });
 // CONTACT US PORTION
-require('dotenv').config(); // Load .env variables
+
 
 const nodemailer = require('nodemailer');
 const ContactMessage = require('./models/ContactMessage');
@@ -1914,3 +1919,4 @@ app.listen(PORT, () => {
   console.log(`🚀 Server running at http://localhost:${PORT}`);
   console.log(`📊 Health check: http://localhost:${PORT}/api/health`);
 });
+
